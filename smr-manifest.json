@@ -1,0 +1,17 @@
+{
+  "name": "SMR Entry",
+  "short_name": "SMR",
+  "description": "Semi Monthly Therapy Statistics Entry",
+  "start_url": "smr-app.html",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231a1a2e'/><text x='50' y='62' font-size='40' text-anchor='middle' fill='%23e94560' font-family='system-ui' font-weight='bold'>SMR</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
