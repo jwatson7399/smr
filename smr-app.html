@@ -736,6 +736,38 @@ body {
 .stat-card .stat-value { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
 .stat-card .stat-label { font-size: 0.62rem; color: var(--text-dim); margin-top: 0.1rem; }
 .stat-card.highlight { border: 1px solid var(--accent); }
+.stat-card.card-direct { border-left: 3px solid var(--code-t); }
+.stat-card.card-direct .stat-value { color: var(--code-t); }
+.stat-card.card-indirect { border-left: 3px solid var(--code-c); }
+.stat-card.card-indirect .stat-value { color: var(--code-c); }
+.stat-card.card-notes { border-left: 3px solid var(--accent2); }
+.stat-card.card-notes .stat-value { color: var(--accent2); }
+.stat-card.card-status { border-left: 3px solid var(--red); }
+.stat-card.card-status .stat-value { color: var(--red); }
+
+/* Summary color key */
+.summary-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--bg);
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+  font-size: 0.68rem;
+}
+.key-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-dim);
+}
+.key-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 
 /* Daily breakdown rows */
 .day-row {
@@ -1626,10 +1658,16 @@ function renderExport() {
   const overviewHtml = `
     <div class="summary-section">
       <h3>Period Overview <span class="section-total">${fmtHrMin(grandTotal)} total</span></h3>
+      <div class="summary-key">
+        <div class="key-item"><span class="key-dot" style="background:var(--code-t)"></span>Direct</div>
+        <div class="key-item"><span class="key-dot" style="background:var(--code-c)"></span>Indirect (codes)</div>
+        <div class="key-item"><span class="key-dot" style="background:var(--accent2)"></span>Indirect (notes)</div>
+        <div class="key-item"><span class="key-dot" style="background:var(--red)"></span>Status</div>
+      </div>
       <div class="stat-grid">
-        <div class="stat-card highlight"><div class="stat-value">${fmtHrMin(totalDirect)}</div><div class="stat-label">Direct</div></div>
-        <div class="stat-card"><div class="stat-value">${fmtHrMin(totalIndirect)}</div><div class="stat-label">Indirect (codes)</div></div>
-        <div class="stat-card"><div class="stat-value">${fmtHrMin(totalNotesMins)}</div><div class="stat-label">Indirect (notes)</div></div>
+        <div class="stat-card card-direct"><div class="stat-value">${fmtHrMin(totalDirect)}</div><div class="stat-label">Direct</div></div>
+        <div class="stat-card card-indirect"><div class="stat-value">${fmtHrMin(totalIndirect)}</div><div class="stat-label">Indirect (codes)</div></div>
+        <div class="stat-card card-notes"><div class="stat-value">${fmtHrMin(totalNotesMins)}</div><div class="stat-label">Indirect (notes)</div></div>
       </div>
       <div class="stat-grid two-col" style="margin-top:0.4rem">
         <div class="stat-card"><div class="stat-value">${totalSessions}</div><div class="stat-label">Sessions entered</div></div>
@@ -1661,9 +1699,9 @@ function renderExport() {
         <div class="day-row">
           <span class="day-label">${dayName(d)} ${dateKey}</span>
           <div class="day-times">
-            <span class="time-direct">${fmtHrMin(dayDirect)}</span>
-            <span class="time-indirect">${dayIndirect ? fmtHrMin(dayIndirect) : ''}</span>
-            <span class="time-notes">${dayNotesMins ? '+' + fmtHrMin(dayNotesMins) + ' notes' : ''}</span>
+            <span class="time-direct"><span class="key-dot" style="background:var(--code-t);display:inline-block;width:6px;height:6px;vertical-align:middle;margin-right:2px"></span>${fmtHrMin(dayDirect)}</span>
+            ${dayIndirect ? `<span class="time-indirect"><span class="key-dot" style="background:var(--code-c);display:inline-block;width:6px;height:6px;vertical-align:middle;margin-right:2px"></span>${fmtHrMin(dayIndirect)}</span>` : ''}
+            ${dayNotesMins ? `<span class="time-notes"><span class="key-dot" style="background:var(--accent2);display:inline-block;width:6px;height:6px;vertical-align:middle;margin-right:2px"></span>${fmtHrMin(dayNotesMins)}</span>` : ''}
           </div>
           <span class="day-total">${fmtHrMin(dayTotal)}</span>
         </div>`;
