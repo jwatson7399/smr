@@ -1,0 +1,2069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SMR">
+<meta name="theme-color" content="#1a1a2e">
+<title>SMR Entry</title>
+<link rel="manifest" href="smr-manifest.json">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --surface2: #0f3460;
+  --accent: #e94560;
+  --accent2: #533483;
+  --text: #eee;
+  --text-dim: #8892a4;
+  --border: #2a3a5c;
+  --green: #00b894;
+  --yellow: #fdcb6e;
+  --red: #e17055;
+  --code-t: #00b894;
+  --code-g: #6c5ce7;
+  --code-a: #e17055;
+  --code-c: #fdcb6e;
+  --code-m: #00cec9;
+  --code-other: #636e72;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  overflow-x: hidden;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+/* ── Upload Screen ── */
+#upload-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 2rem;
+  text-align: center;
+}
+
+#upload-screen h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+#upload-screen p {
+  color: var(--text-dim);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.upload-zone {
+  width: 100%;
+  max-width: 360px;
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 3rem 1.5rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.upload-zone:active, .upload-zone.dragover {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.08);
+}
+
+.upload-zone .icon { font-size: 3rem; margin-bottom: 1rem; }
+.upload-zone .label { font-size: 1rem; color: var(--text-dim); }
+
+#file-input { display: none; }
+
+.upload-info {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: 12px;
+  max-width: 360px;
+  width: 100%;
+  display: none;
+}
+
+.upload-info .filename { font-weight: 600; margin-bottom: 0.25rem; }
+.upload-info .details { color: var(--text-dim); font-size: 0.85rem; }
+
+/* also show a "continue with saved data" button if localStorage has data */
+.restore-btn {
+  margin-top: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: none;
+}
+
+/* ── Nav Tabs ── */
+#app-screen { display: none; flex-direction: column; height: 100dvh; }
+
+.nav-bar {
+  display: flex;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.25rem;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.nav-tab {
+  flex: 1;
+  padding: 0.6rem 0.25rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav-tab.active {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.nav-tab .badge {
+  display: inline-block;
+  background: var(--accent);
+  color: white;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}
+
+/* ── Panel Container ── */
+.panels { flex: 1; overflow: hidden; position: relative; }
+.panel { position: absolute; inset: 0; overflow-y: auto; padding: 0; display: none; }
+.panel.active { display: block; }
+
+/* ── Sessions Grid ── */
+.date-selector {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem;
+  gap: 0.35rem;
+}
+.date-selector::-webkit-scrollbar { display: none; }
+
+.date-chip {
+  flex-shrink: 0;
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.date-chip.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.date-chip.weekend {
+  opacity: 0.4;
+}
+
+.date-chip .day-label {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  margin-bottom: 0.1rem;
+}
+
+.student-list { padding: 0.5rem; }
+
+.student-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.75rem;
+  margin-bottom: 0.35rem;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.student-row:active {
+  background: var(--surface2);
+  transform: scale(0.98);
+}
+
+.student-row .name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-row .name .freq {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 400;
+  margin-left: 0.35rem;
+}
+
+.student-row .code-display {
+  font-size: 0.95rem;
+  font-weight: 700;
+  min-width: 3rem;
+  text-align: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+}
+
+.code-display.has-code { background: rgba(0, 184, 148, 0.15); color: var(--code-t); }
+.code-display.code-t { background: rgba(0, 184, 148, 0.15); color: var(--code-t); }
+.code-display.code-g { background: rgba(108, 92, 231, 0.15); color: var(--code-g); }
+.code-display.code-a { background: rgba(225, 112, 85, 0.15); color: var(--code-a); }
+.code-display.code-c { background: rgba(253, 203, 110, 0.15); color: var(--code-c); }
+.code-display.code-m { background: rgba(0, 206, 201, 0.15); color: var(--code-m); }
+.code-display.code-other { background: rgba(99, 110, 114, 0.15); color: var(--code-other); }
+
+/* ── Code Picker Modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+
+.code-picker {
+  width: 100%;
+  max-width: 500px;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding: 1rem 1rem calc(1rem + var(--safe-bottom));
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.picker-header .student-name { font-weight: 700; font-size: 1rem; }
+.picker-header .date-label { color: var(--text-dim); font-size: 0.85rem; }
+.picker-header .clear-btn {
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.code-section-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0.6rem 0 0.35rem;
+}
+
+.code-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+}
+
+.code-btn {
+  padding: 0.7rem 0.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.1s;
+}
+
+.code-btn:active {
+  transform: scale(0.95);
+}
+
+.code-btn .code-label {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  margin-top: 0.15rem;
+}
+
+.modifier-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.modifier-btn {
+  flex: 1;
+  padding: 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.modifier-btn:active { background: var(--surface2); }
+
+/* ── Builder display ── */
+.builder-display {
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  min-height: 3.2rem;
+  border: 2px solid var(--border);
+  transition: border-color 0.2s;
+}
+
+.builder-display.has-code {
+  border-color: var(--accent);
+}
+
+.builder-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  min-height: 1.8rem;
+}
+
+.builder-placeholder {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.builder-token {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  gap: 0.15rem;
+}
+
+.builder-token.type-direct { background: rgba(0, 184, 148, 0.2); color: var(--code-t); }
+.builder-token.type-status { background: rgba(225, 112, 85, 0.2); color: var(--code-a); }
+.builder-token.type-indirect { background: rgba(253, 203, 110, 0.2); color: var(--code-c); }
+
+.builder-token .token-mod {
+  font-weight: 400;
+  opacity: 0.7;
+  font-size: 0.7rem;
+  margin-left: 0.1rem;
+}
+
+.builder-token .token-time {
+  font-weight: 400;
+  font-size: 0.65rem;
+  opacity: 0.6;
+  margin-left: 0.2rem;
+}
+
+.builder-plus {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  margin: 0 0.1rem;
+}
+
+.builder-calc {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.3rem;
+  font-weight: 600;
+  display: none;
+}
+
+.builder-calc.visible {
+  display: block;
+}
+
+.builder-calc .total-time {
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+/* ── Builder action buttons ── */
+.builder-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.builder-action-btn {
+  flex: 1;
+  padding: 0.55rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.1s;
+}
+
+.builder-action-btn:active { transform: scale(0.96); }
+
+.undo-btn {
+  background: var(--bg);
+  color: var(--text-dim);
+}
+
+.clear-code-btn {
+  background: var(--bg);
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.done-btn {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  flex: 1.5;
+}
+
+/* ── Comments Panel ── */
+.comment-entry {
+  padding: 0.75rem;
+  margin: 0.5rem;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.comment-entry .comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.comment-entry .comment-student {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.comment-entry .comment-date {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.comment-entry textarea {
+  width: 100%;
+  min-height: 60px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.add-comment-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--surface);
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.35rem;
+}
+
+.add-comment-bar select, .add-comment-bar button {
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.add-comment-bar select { flex: 1; min-width: 0; }
+.add-comment-bar button {
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.delete-comment-btn {
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+/* ── Notes Panel ── */
+.note-entry {
+  padding: 0.75rem;
+  margin: 0.5rem;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.note-entry .note-date-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: var(--accent);
+}
+
+.note-date-total {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.note-activity-card {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border: 1px solid var(--border);
+}
+
+.note-activity-top {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.note-activity-top input[type="text"] {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+.note-activity-top .remove-activity {
+  background: none;
+  border: none;
+  color: var(--red);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.3rem;
+  flex-shrink: 0;
+}
+
+.time-chips {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.time-chip {
+  padding: 0.3rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.time-chip:active { transform: scale(0.95); }
+
+.time-chip.selected {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.time-chip.custom-time-chip {
+  border-style: dashed;
+  min-width: 50px;
+  position: relative;
+}
+
+.time-chip.custom-time-chip.selected {
+  border-style: solid;
+}
+
+.custom-time-inline {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  width: 38px;
+  text-align: center;
+  outline: none;
+  padding: 0;
+}
+
+.custom-time-inline::placeholder { color: var(--text-dim); opacity: 0.6; }
+
+.add-activity-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 0.35rem;
+  width: 100%;
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin-top: 0.25rem;
+}
+
+/* ── Summary / Export Panel ── */
+#panel-export { padding: 0.5rem; }
+
+.summary-section {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.summary-section h3 {
+  font-size: 0.82rem;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.summary-section h3 .section-total {
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.stat-grid.two-col { grid-template-columns: 1fr 1fr; }
+
+.stat-card {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 0.55rem;
+  text-align: center;
+}
+
+.stat-card .stat-value { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+.stat-card .stat-label { font-size: 0.62rem; color: var(--text-dim); margin-top: 0.1rem; }
+.stat-card.highlight { border: 1px solid var(--accent); }
+
+/* Daily breakdown rows */
+.day-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.day-row:last-child { border-bottom: none; }
+
+.day-row .day-label { font-weight: 600; min-width: 70px; }
+
+.day-row .day-times {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.day-row .day-times .time-direct { color: var(--code-t); }
+.day-row .day-times .time-indirect { color: var(--code-c); }
+.day-row .day-times .time-notes { color: var(--accent2); }
+.day-row .day-total { font-weight: 700; color: var(--text); font-size: 0.82rem; min-width: 42px; text-align: right; }
+
+/* Student summary rows */
+.student-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.student-summary-row:last-child { border-bottom: none; }
+
+.student-summary-row .stu-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.student-summary-row .stu-codes {
+  display: flex;
+  gap: 0.2rem;
+  margin: 0 0.4rem;
+}
+
+.stu-code-pip {
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.stu-code-pip.type-direct { background: rgba(0,184,148,0.15); color: var(--code-t); }
+.stu-code-pip.type-status { background: rgba(225,112,85,0.15); color: var(--code-a); }
+.stu-code-pip.type-indirect { background: rgba(253,203,110,0.15); color: var(--code-c); }
+
+.student-summary-row .stu-time {
+  font-weight: 700;
+  min-width: 36px;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+/* Not-seen warning */
+.not-seen-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+}
+
+.not-seen-chip {
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(225,112,85,0.12);
+  color: var(--red);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.all-good {
+  color: var(--green);
+  font-size: 0.82rem;
+  padding: 0.3rem 0;
+}
+
+/* Export buttons */
+.export-actions {
+  margin-top: 0.25rem;
+}
+
+.export-btn {
+  width: 100%;
+  padding: 0.8rem;
+  border-radius: 12px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 0.4rem;
+}
+
+.export-btn.primary { background: var(--accent); color: white; }
+.export-btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.export-btn.danger { background: var(--surface); color: var(--red); border: 1px solid var(--red); }
+
+.export-text-preview {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 0.75rem;
+  font-family: 'SF Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  max-height: 250px;
+  overflow: auto;
+  white-space: pre;
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+}
+
+.toggle-preview-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  padding: 0.4rem;
+  cursor: pointer;
+  text-align: center;
+}
+
+/* ── Utility ── */
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ════ Upload Screen ════ -->
+<div id="upload-screen">
+  <h1>SMR Entry</h1>
+  <p>Upload your .xlsm spreadsheet to load the student roster and billing period dates.</p>
+  <div class="upload-zone" id="upload-zone">
+    <div class="icon">📋</div>
+    <div class="label">Tap to select .xlsm file</div>
+  </div>
+  <input type="file" id="file-input" accept=".xlsm,.xlsx">
+  <div class="upload-info" id="upload-info">
+    <div class="filename" id="upload-filename"></div>
+    <div class="details" id="upload-details"></div>
+  </div>
+  <button class="restore-btn" id="restore-btn">Resume saved session</button>
+</div>
+
+<!-- ════ App Screen ════ -->
+<div id="app-screen">
+  <nav class="nav-bar">
+    <button class="nav-tab active" data-panel="sessions">Sessions<span class="badge" id="session-count">0</span></button>
+    <button class="nav-tab" data-panel="comments">Comments<span class="badge" id="comment-count">0</span></button>
+    <button class="nav-tab" data-panel="notes">Notes</button>
+    <button class="nav-tab" data-panel="export">Summary</button>
+  </nav>
+
+  <div class="panels">
+    <!-- Sessions Panel -->
+    <div class="panel active" id="panel-sessions">
+      <div class="date-selector" id="date-selector"></div>
+      <div class="student-list" id="student-list"></div>
+    </div>
+
+    <!-- Comments Panel -->
+    <div class="panel" id="panel-comments">
+      <div class="add-comment-bar">
+        <select id="comment-student-select"></select>
+        <select id="comment-date-select"></select>
+        <button id="add-comment-btn">+ Add</button>
+      </div>
+      <div id="comments-list"></div>
+    </div>
+
+    <!-- Notes Panel -->
+    <div class="panel" id="panel-notes">
+      <div id="notes-list"></div>
+    </div>
+
+    <!-- Export Panel -->
+    <div class="panel" id="panel-export">
+      <!-- filled dynamically -->
+    </div>
+  </div>
+</div>
+
+<!-- ════ Code Picker Modal ════ -->
+<div class="modal-overlay" id="code-modal">
+  <div class="code-picker">
+    <div class="picker-header">
+      <div>
+        <div class="student-name" id="picker-student"></div>
+        <div class="date-label" id="picker-date"></div>
+      </div>
+      <button class="clear-btn" id="picker-cancel">Cancel</button>
+    </div>
+
+    <!-- ── Live builder display ── -->
+    <div class="builder-display" id="builder-display">
+      <div class="builder-tokens" id="builder-tokens">
+        <span class="builder-placeholder">Tap a code below</span>
+      </div>
+      <div class="builder-calc" id="builder-calc"></div>
+    </div>
+
+    <!-- ── Action buttons row ── -->
+    <div class="builder-actions">
+      <button class="builder-action-btn undo-btn" id="picker-undo">Undo</button>
+      <button class="builder-action-btn clear-code-btn" id="picker-clear">Clear</button>
+      <button class="builder-action-btn done-btn" id="picker-done">Done</button>
+    </div>
+
+    <div class="code-section-label">Direct</div>
+    <div class="code-grid" id="direct-codes"></div>
+    <div class="code-section-label">Status</div>
+    <div class="code-grid" id="status-codes"></div>
+    <div class="code-section-label">Indirect</div>
+    <div class="code-grid" id="indirect-codes"></div>
+    <div class="code-section-label">Modifiers</div>
+    <div class="modifier-row" id="modifier-row"></div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// DATA MODEL
+// ══════════════════════════════════════════════
+let appData = {
+  filename: '',
+  students: [],       // [{name, freq, duration, district, site, type}]
+  dates: [],          // [Date objects]
+  sessions: {},       // { "StudentName|2026-02-17": "T" }
+  comments: [],       // [{student, date, text}]
+  notes: {},          // { "2/17": [{activity, time}] }
+  selectedDate: null,  // index into dates[]
+};
+
+const DIRECT_CODES = [
+  {code: 'T', label: 'Therapy'},
+  {code: 'G1', label: 'Group 1'},
+  {code: 'G2', label: 'Group 2'},
+  {code: 'I', label: 'Integrated'},
+  {code: 'M', label: 'Makeup'},
+  {code: 'Y', label: 'Tele'},
+];
+
+const STATUS_CODES = [
+  {code: 'A', label: 'Absent'},
+  {code: 'A2', label: 'Absent Gp'},
+  {code: 'O', label: 'Ther Unavail'},
+  {code: 'H', label: 'School Close'},
+];
+
+const INDIRECT_CODES = [
+  {code: 'C', label: 'Consult'},
+  {code: 'S', label: 'Scheduling'},
+  {code: 'R', label: 'Record Rev'},
+  {code: 'D', label: 'Document'},
+];
+
+const MODIFIERS = [
+  {code: '/', label: '/ Half', action: 'append'},
+  {code: '//', label: '// <Half', action: 'append'},
+  {code: 'toggle/', label: 'Toggle /', action: 'toggle'},
+];
+
+// ══════════════════════════════════════════════
+// XLSX PARSING
+// ══════════════════════════════════════════════
+function parseXlsm(data) {
+  const wb = XLSX.read(data, {type: 'array', cellDates: true});
+  const ws = wb.Sheets['STANDARD Stats'];
+  if (!ws) throw new Error('Sheet "STANDARD Stats" not found');
+
+  const range = XLSX.utils.decode_range(ws['!ref']);
+
+  // Extract dates from row 5 (index 4), columns G+ (col index 6+)
+  const dates = [];
+  for (let c = 6; c <= range.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({r: 4, c})];
+    if (cell && cell.v instanceof Date) {
+      dates.push(cell.v);
+    } else if (cell && typeof cell.v === 'number') {
+      // Excel serial date
+      dates.push(new Date(Math.round((cell.v - 25569) * 86400 * 1000)));
+    }
+  }
+
+  // Extract students from rows 6+ (index 5+), column A
+  const students = [];
+  for (let r = 5; r <= range.e.r; r++) {
+    const nameCell = ws[XLSX.utils.encode_cell({r, c: 0})];
+    if (!nameCell || !nameCell.v) continue;
+    const name = String(nameCell.v).trim();
+    if (!name || name === 'For Internal Use' || name.startsWith('TOTAL') || name.startsWith('KEY')) break;
+
+    const freq = ws[XLSX.utils.encode_cell({r, c: 1})]?.v || '';
+    const dur = ws[XLSX.utils.encode_cell({r, c: 2})]?.v || '';
+    const dist = ws[XLSX.utils.encode_cell({r, c: 3})]?.v || '';
+    const site = ws[XLSX.utils.encode_cell({r, c: 4})]?.v || '';
+    const type = ws[XLSX.utils.encode_cell({r, c: 5})]?.v || '';
+
+    students.push({name, freq: String(freq), duration: String(dur), district: String(dist), site: String(site), type: String(type)});
+  }
+
+  return {students, dates};
+}
+
+// ══════════════════════════════════════════════
+// DATE UTILITIES
+// ══════════════════════════════════════════════
+function fmtDate(d) {
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+function fmtDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function sessionKey(studentName, date) {
+  return `${studentName}|${fmtDateKey(date)}`;
+}
+
+function dayName(d) {
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+}
+
+function isWeekend(d) {
+  return d.getDay() === 0 || d.getDay() === 6;
+}
+
+// ══════════════════════════════════════════════
+// LOCAL STORAGE
+// ══════════════════════════════════════════════
+function saveToStorage() {
+  try {
+    const toSave = {
+      filename: appData.filename,
+      students: appData.students,
+      dates: appData.dates.map(d => d.toISOString()),
+      sessions: appData.sessions,
+      comments: appData.comments,
+      notes: appData.notes,
+    };
+    localStorage.setItem('smr_data', JSON.stringify(toSave));
+  } catch(e) { /* silent */ }
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem('smr_data');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    d.dates = d.dates.map(s => new Date(s));
+    return d;
+  } catch(e) { return null; }
+}
+
+// ══════════════════════════════════════════════
+// UI RENDERING
+// ══════════════════════════════════════════════
+function showApp() {
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'flex';
+  renderDateSelector();
+  renderStudentList();
+  renderCommentSelects();
+  renderNotes();
+  updateCounts();
+}
+
+function renderDateSelector() {
+  const container = document.getElementById('date-selector');
+  container.innerHTML = '';
+
+  // Default to today or first weekday
+  if (appData.selectedDate === null) {
+    const today = new Date();
+    const todayKey = fmtDateKey(today);
+    const idx = appData.dates.findIndex(d => fmtDateKey(d) === todayKey);
+    appData.selectedDate = idx >= 0 ? idx : appData.dates.findIndex(d => !isWeekend(d));
+    if (appData.selectedDate < 0) appData.selectedDate = 0;
+  }
+
+  appData.dates.forEach((d, i) => {
+    const chip = document.createElement('button');
+    chip.className = 'date-chip' + (i === appData.selectedDate ? ' active' : '') + (isWeekend(d) ? ' weekend' : '');
+    chip.innerHTML = `<span class="day-label">${dayName(d)}</span>${fmtDate(d)}`;
+    chip.onclick = () => {
+      appData.selectedDate = i;
+      renderDateSelector();
+      renderStudentList();
+    };
+    container.appendChild(chip);
+  });
+
+  // Scroll active chip into view
+  setTimeout(() => {
+    const active = container.querySelector('.active');
+    if (active) active.scrollIntoView({behavior: 'smooth', inline: 'center', block: 'nearest'});
+  }, 50);
+}
+
+function getCodeColorClass(code) {
+  if (!code) return '';
+  const upper = code.toUpperCase();
+  if (upper.includes('T') && !upper.startsWith('A')) return 'code-t';
+  if (upper.startsWith('G')) return 'code-g';
+  if (upper.startsWith('A')) return 'code-a';
+  if (upper.startsWith('C') || upper.includes('C')) return 'code-c';
+  if (upper.startsWith('M')) return 'code-m';
+  return 'code-other';
+}
+
+function renderStudentList() {
+  const container = document.getElementById('student-list');
+  const date = appData.dates[appData.selectedDate];
+  if (!date) { container.innerHTML = '<p style="padding:1rem;color:var(--text-dim)">No date selected</p>'; return; }
+
+  container.innerHTML = '';
+  appData.students.forEach((student) => {
+    const key = sessionKey(student.name, date);
+    const code = appData.sessions[key] || '';
+
+    const row = document.createElement('div');
+    row.className = 'student-row';
+    row.innerHTML = `
+      <div class="name">${student.name}<span class="freq">${student.freq}</span></div>
+      <div class="code-display ${code ? getCodeColorClass(code) : ''}">${code || '—'}</div>
+    `;
+    row.onclick = () => openCodePicker(student, date);
+    container.appendChild(row);
+  });
+}
+
+// ── Code Picker (Builder Pattern) ──
+let pickerStudent = null;
+let pickerDate = null;
+let builderCode = '';  // raw code string being built
+
+function openCodePicker(student, date) {
+  pickerStudent = student;
+  pickerDate = date;
+
+  document.getElementById('picker-student').textContent = student.name;
+  document.getElementById('picker-date').textContent = `${dayName(date)} ${fmtDate(date)}`;
+
+  const key = sessionKey(student.name, date);
+  builderCode = appData.sessions[key] || '';
+  renderBuilder();
+
+  document.getElementById('code-modal').classList.add('open');
+}
+
+function closeCodePicker() {
+  document.getElementById('code-modal').classList.remove('open');
+  pickerStudent = null;
+  pickerDate = null;
+  builderCode = '';
+}
+
+function commitCode() {
+  // Save the built code and close
+  if (!pickerStudent || !pickerDate) return;
+  const key = sessionKey(pickerStudent.name, pickerDate);
+  appData.sessions[key] = builderCode.trim();
+  saveToStorage();
+  renderStudentList();
+  updateCounts();
+  closeCodePicker();
+}
+
+function appendToBuilder(str) {
+  builderCode += str;
+  renderBuilder();
+}
+
+function undoBuilder() {
+  if (!builderCode) return;
+  // Remove last meaningful chunk: modifier(s) or code
+  // If ends with //, remove //
+  if (builderCode.endsWith('//')) {
+    builderCode = builderCode.slice(0, -2);
+  } else if (builderCode.endsWith('/')) {
+    builderCode = builderCode.slice(0, -1);
+  } else if (builderCode.endsWith(' ')) {
+    builderCode = builderCode.slice(0, -1);
+  } else {
+    // Check for multi-char codes at end
+    let removed = false;
+    for (const mc of MULTI_CODES) {
+      if (builderCode.endsWith(mc)) {
+        builderCode = builderCode.slice(0, -mc.length);
+        removed = true;
+        break;
+      }
+    }
+    if (!removed) {
+      builderCode = builderCode.slice(0, -1);
+    }
+  }
+  renderBuilder();
+}
+
+function clearBuilder() {
+  builderCode = '';
+  renderBuilder();
+}
+
+function toggleLastModifier() {
+  // Cycles the last token's modifier: none → / → // → none
+  if (!builderCode) return;
+
+  if (builderCode.endsWith('//')) {
+    // // → remove both slashes (back to full)
+    builderCode = builderCode.slice(0, -2);
+  } else if (builderCode.endsWith('/')) {
+    // / → upgrade to //
+    builderCode += '/';
+  } else {
+    // No modifier on last token → add /
+    builderCode += '/';
+  }
+  renderBuilder();
+}
+
+function renderBuilder() {
+  const display = document.getElementById('builder-display');
+  const tokensEl = document.getElementById('builder-tokens');
+  const calcEl = document.getElementById('builder-calc');
+  const code = builderCode.trim();
+
+  if (!code) {
+    display.classList.remove('has-code');
+    tokensEl.innerHTML = '<span class="builder-placeholder">Tap a code below</span>';
+    calcEl.classList.remove('visible');
+    return;
+  }
+
+  display.classList.add('has-code');
+  const tokens = tokenizeCode(code);
+  let html = '';
+
+  tokens.forEach((tok, i) => {
+    if (i > 0) html += '<span class="builder-plus">+</span>';
+
+    let typeClass = 'type-direct';
+    if (STATUS_CODE_SET.has(tok.code)) typeClass = 'type-status';
+    else if (INDIRECT_CODE_SET.has(tok.code)) typeClass = 'type-indirect';
+
+    const mins = tok.modifier === '//' ? 10 : tok.modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES;
+    const modLabel = tok.modifier === '//' ? ' //' : tok.modifier === '/' ? ' /' : '';
+    const modDesc = tok.modifier === '//' ? '<half' : tok.modifier === '/' ? 'half' : 'full';
+
+    html += `<span class="builder-token ${typeClass}">
+      ${tok.code}${modLabel ? `<span class="token-mod">${modLabel}</span>` : ''}
+      <span class="token-time">${mins}m</span>
+    </span>`;
+  });
+
+  tokensEl.innerHTML = html;
+
+  const totalMin = calcMinutes(code);
+  calcEl.classList.add('visible');
+  calcEl.innerHTML = `Total: <span class="total-time">${fmtHrMin(totalMin)}</span>`;
+}
+
+function buildCodeButtons() {
+  const directGrid = document.getElementById('direct-codes');
+  const statusGrid = document.getElementById('status-codes');
+  const indirectGrid = document.getElementById('indirect-codes');
+  const modRow = document.getElementById('modifier-row');
+
+  directGrid.innerHTML = '';
+  statusGrid.innerHTML = '';
+  indirectGrid.innerHTML = '';
+  modRow.innerHTML = '';
+
+  DIRECT_CODES.forEach(({code, label}) => {
+    const btn = document.createElement('button');
+    btn.className = 'code-btn';
+    btn.innerHTML = `${code}<span class="code-label">${label}</span>`;
+    btn.onclick = () => appendToBuilder(code);
+    directGrid.appendChild(btn);
+  });
+
+  STATUS_CODES.forEach(({code, label}) => {
+    const btn = document.createElement('button');
+    btn.className = 'code-btn';
+    btn.innerHTML = `${code}<span class="code-label">${label}</span>`;
+    btn.onclick = () => appendToBuilder(code);
+    statusGrid.appendChild(btn);
+  });
+
+  INDIRECT_CODES.forEach(({code, label}) => {
+    const btn = document.createElement('button');
+    btn.className = 'code-btn';
+    btn.innerHTML = `${code}<span class="code-label">${label}</span>`;
+    btn.onclick = () => appendToBuilder(code);
+    indirectGrid.appendChild(btn);
+  });
+
+  MODIFIERS.forEach(({code, label, action}) => {
+    const btn = document.createElement('button');
+    btn.className = 'modifier-btn';
+    btn.textContent = label;
+    if (action === 'toggle') {
+      btn.onclick = () => toggleLastModifier();
+    } else {
+      btn.onclick = () => appendToBuilder(code);
+    }
+    modRow.appendChild(btn);
+  });
+}
+
+// ── Comments ──
+function renderCommentSelects() {
+  const studentSel = document.getElementById('comment-student-select');
+  const dateSel = document.getElementById('comment-date-select');
+
+  studentSel.innerHTML = appData.students.map(s =>
+    `<option value="${s.name}">${s.name}</option>`
+  ).join('');
+
+  dateSel.innerHTML = appData.dates.filter(d => !isWeekend(d)).map(d =>
+    `<option value="${fmtDate(d)}">${dayName(d)} ${fmtDate(d)}</option>`
+  ).join('');
+}
+
+function renderComments() {
+  const container = document.getElementById('comments-list');
+  container.innerHTML = '';
+
+  if (appData.comments.length === 0) {
+    container.innerHTML = '<p style="padding:1.5rem;color:var(--text-dim);text-align:center">No comments yet. Use the bar above to add one.</p>';
+    return;
+  }
+
+  appData.comments.forEach((c, i) => {
+    const entry = document.createElement('div');
+    entry.className = 'comment-entry';
+    entry.innerHTML = `
+      <div class="comment-header">
+        <span class="comment-student">${c.student}</span>
+        <span class="comment-date">${c.date}</span>
+        <button class="delete-comment-btn" data-idx="${i}">Remove</button>
+      </div>
+      <textarea data-idx="${i}" placeholder="Enter comment...">${c.text}</textarea>
+    `;
+    container.appendChild(entry);
+  });
+
+  container.querySelectorAll('textarea').forEach(ta => {
+    ta.oninput = () => {
+      appData.comments[parseInt(ta.dataset.idx)].text = ta.value;
+      saveToStorage();
+    };
+  });
+
+  container.querySelectorAll('.delete-comment-btn').forEach(btn => {
+    btn.onclick = () => {
+      appData.comments.splice(parseInt(btn.dataset.idx), 1);
+      saveToStorage();
+      renderComments();
+      updateCounts();
+    };
+  });
+}
+
+function addComment() {
+  const student = document.getElementById('comment-student-select').value;
+  const date = document.getElementById('comment-date-select').value;
+  appData.comments.push({student, date, text: ''});
+  saveToStorage();
+  renderComments();
+  updateCounts();
+  // Focus the new textarea
+  setTimeout(() => {
+    const textareas = document.querySelectorAll('#comments-list textarea');
+    if (textareas.length) textareas[textareas.length - 1].focus();
+  }, 100);
+}
+
+// ── Notes ──
+const TIME_PRESETS = ['15 min', '30 min', '45 min', '1 hr', '1.5 hr', '2 hr'];
+
+function parseNoteMins(timeStr) {
+  if (!timeStr) return 0;
+  const t = timeStr.trim().toLowerCase();
+  const match = t.match(/(\d+\.?\d*)\s*(min|mins|m|hr|hrs|hour|hours)?/);
+  if (!match) return 0;
+  let val = parseFloat(match[1]);
+  const unit = match[2] || 'min';
+  if (unit.startsWith('h')) val *= 60;
+  return val;
+}
+
+function dateTotalMins(dateKey) {
+  return (appData.notes[dateKey] || []).reduce((sum, a) => sum + parseNoteMins(a.time), 0);
+}
+
+function renderNotes() {
+  const container = document.getElementById('notes-list');
+  container.innerHTML = '';
+
+  const weekdayDates = appData.dates.filter(d => !isWeekend(d));
+
+  weekdayDates.forEach(d => {
+    const dateKey = fmtDate(d);
+    if (!appData.notes[dateKey]) appData.notes[dateKey] = [];
+
+    const entry = document.createElement('div');
+    entry.className = 'note-entry';
+
+    const dayTotal = dateTotalMins(dateKey);
+
+    let activitiesHtml = '';
+    appData.notes[dateKey].forEach((act, ai) => {
+      const currentTime = (act.time || '').trim();
+      const isPreset = TIME_PRESETS.includes(currentTime);
+      const isCustom = currentTime && !isPreset;
+
+      const chipsHtml = TIME_PRESETS.map(t =>
+        `<button class="time-chip${currentTime === t ? ' selected' : ''}" data-date="${dateKey}" data-ai="${ai}" data-time="${t}">${t}</button>`
+      ).join('') +
+      `<span class="time-chip custom-time-chip${isCustom ? ' selected' : ''}">
+        <input type="text" class="custom-time-inline" value="${isCustom ? escHtml(currentTime) : ''}" placeholder="other" data-date="${dateKey}" data-ai="${ai}" data-field="custom-time">
+      </span>`;
+
+      activitiesHtml += `
+        <div class="note-activity-card">
+          <div class="note-activity-top">
+            <input type="text" value="${escHtml(act.activity)}" placeholder="Activity description" data-date="${dateKey}" data-ai="${ai}" data-field="activity">
+            <button class="remove-activity" data-date="${dateKey}" data-ai="${ai}">×</button>
+          </div>
+          <div class="time-chips">${chipsHtml}</div>
+        </div>
+      `;
+    });
+
+    entry.innerHTML = `
+      <div class="note-date-header">
+        <span>${dayName(d)} ${dateKey}</span>
+        <span class="note-date-total">${dayTotal > 0 ? fmtHrMin(dayTotal) : ''}</span>
+      </div>
+      ${activitiesHtml}
+      <button class="add-activity-btn" data-date="${dateKey}">+ Add activity</button>
+    `;
+    container.appendChild(entry);
+  });
+
+  // Wire up activity name inputs
+  container.querySelectorAll('input[data-field="activity"]').forEach(inp => {
+    inp.oninput = () => {
+      const {date, ai} = inp.dataset;
+      appData.notes[date][parseInt(ai)].activity = inp.value;
+      saveToStorage();
+    };
+  });
+
+  // Wire up preset time chips
+  container.querySelectorAll('.time-chip[data-time]').forEach(chip => {
+    chip.onclick = () => {
+      const {date, ai, time} = chip.dataset;
+      const idx = parseInt(ai);
+      // Toggle: if already selected, deselect
+      if (appData.notes[date][idx].time === time) {
+        appData.notes[date][idx].time = '';
+      } else {
+        appData.notes[date][idx].time = time;
+      }
+      saveToStorage();
+      renderNotes();
+    };
+  });
+
+  // Wire up custom time inputs
+  container.querySelectorAll('input[data-field="custom-time"]').forEach(inp => {
+    inp.oninput = () => {
+      const {date, ai} = inp.dataset;
+      const idx = parseInt(ai);
+      const val = inp.value.trim();
+      appData.notes[date][idx].time = val;
+      // Highlight the custom chip
+      const chip = inp.closest('.custom-time-chip');
+      if (val) {
+        chip.classList.add('selected');
+        // Deselect any preset chips in this row
+        chip.closest('.time-chips').querySelectorAll('.time-chip[data-time]').forEach(c => c.classList.remove('selected'));
+      } else {
+        chip.classList.remove('selected');
+      }
+      saveToStorage();
+      // Update the date total without full re-render (avoids losing focus)
+      const noteEntry = inp.closest('.note-entry');
+      const totalEl = noteEntry.querySelector('.note-date-total');
+      const total = dateTotalMins(date);
+      totalEl.textContent = total > 0 ? fmtHrMin(total) : '';
+    };
+
+    // On focus, select all text for easy replacement
+    inp.onfocus = () => inp.select();
+  });
+
+  // Wire up remove buttons
+  container.querySelectorAll('.remove-activity').forEach(btn => {
+    btn.onclick = () => {
+      const {date, ai} = btn.dataset;
+      appData.notes[date].splice(parseInt(ai), 1);
+      saveToStorage();
+      renderNotes();
+    };
+  });
+
+  // Wire up add buttons
+  container.querySelectorAll('.add-activity-btn').forEach(btn => {
+    btn.onclick = () => {
+      const date = btn.dataset.date;
+      appData.notes[date].push({activity: '', time: ''});
+      saveToStorage();
+      renderNotes();
+      // Focus new activity input
+      setTimeout(() => {
+        const inputs = container.querySelectorAll(`input[data-date="${date}"][data-field="activity"]`);
+        if (inputs.length) inputs[inputs.length-1].focus();
+      }, 50);
+    };
+  });
+}
+
+// ── Export ──
+function renderExport() {
+  const panel = document.getElementById('panel-export');
+  const weekdays = appData.dates.filter(d => !isWeekend(d));
+
+  // ── Aggregate data ──
+  const totalComments = appData.comments.filter(c => c.text.trim()).length;
+
+  // Per-student aggregation
+  const studentStats = appData.students.map(s => {
+    let direct = 0, indirect = 0, status = 0, sessionCount = 0;
+    const codes = [];
+    appData.dates.forEach(d => {
+      const code = appData.sessions[sessionKey(s.name, d)];
+      if (!code) return;
+      sessionCount++;
+      codes.push({date: fmtDate(d), code});
+      const cls = classifyMinutes(code);
+      direct += cls.direct;
+      indirect += cls.indirect;
+      status += cls.status;
+    });
+    return {name: s.name, freq: s.freq, direct, indirect, status, total: direct + indirect + status, sessionCount, codes};
+  });
+
+  const studentsWithSessions = studentStats.filter(s => s.sessionCount > 0);
+  const studentsNotSeen = studentStats.filter(s => s.sessionCount === 0);
+
+  // Totals from codes
+  let totalDirect = 0, totalIndirect = 0, totalStatus = 0;
+  studentStats.forEach(s => { totalDirect += s.direct; totalIndirect += s.indirect; totalStatus += s.status; });
+  const totalCodeMins = totalDirect + totalIndirect + totalStatus;
+
+  // Totals from notes
+  let totalNotesMins = 0;
+  Object.values(appData.notes).forEach(acts => acts.forEach(a => { totalNotesMins += parseNoteMins(a.time); }));
+
+  const grandTotal = totalCodeMins + totalNotesMins;
+  const totalSessions = Object.values(appData.sessions).filter(v => v).length;
+
+  // ── 1. Overview cards ──
+  const overviewHtml = `
+    <div class="summary-section">
+      <h3>Period Overview <span class="section-total">${fmtHrMin(grandTotal)} total</span></h3>
+      <div class="stat-grid">
+        <div class="stat-card highlight"><div class="stat-value">${fmtHrMin(totalDirect)}</div><div class="stat-label">Direct</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtHrMin(totalIndirect)}</div><div class="stat-label">Indirect (codes)</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtHrMin(totalNotesMins)}</div><div class="stat-label">Indirect (notes)</div></div>
+      </div>
+      <div class="stat-grid two-col" style="margin-top:0.4rem">
+        <div class="stat-card"><div class="stat-value">${totalSessions}</div><div class="stat-label">Sessions entered</div></div>
+        <div class="stat-card"><div class="stat-value">${studentsWithSessions.length}<span style="font-size:0.7rem;color:var(--text-dim)">/${appData.students.length}</span></div><div class="stat-label">Students seen</div></div>
+      </div>
+    </div>`;
+
+  // ── 2. Daily breakdown (codes + notes) ──
+  let dailyHtml = '';
+  weekdays.forEach(d => {
+    const dateKey = fmtDate(d);
+    let dayDirect = 0, dayIndirect = 0, dayStatus = 0;
+    let dayStudentCount = 0;
+    appData.students.forEach(s => {
+      const code = appData.sessions[sessionKey(s.name, d)];
+      if (!code) return;
+      dayStudentCount++;
+      const cls = classifyMinutes(code);
+      dayDirect += cls.direct;
+      dayIndirect += cls.indirect;
+      dayStatus += cls.status;
+    });
+    const dayNotesMins = dateTotalMins(dateKey);
+    const dayCodeMins = dayDirect + dayIndirect + dayStatus;
+    const dayTotal = dayCodeMins + dayNotesMins;
+
+    if (dayTotal > 0 || dayStudentCount > 0) {
+      dailyHtml += `
+        <div class="day-row">
+          <span class="day-label">${dayName(d)} ${dateKey}</span>
+          <div class="day-times">
+            <span class="time-direct">${fmtHrMin(dayDirect)}</span>
+            <span class="time-indirect">${dayIndirect ? fmtHrMin(dayIndirect) : ''}</span>
+            <span class="time-notes">${dayNotesMins ? '+' + fmtHrMin(dayNotesMins) + ' notes' : ''}</span>
+          </div>
+          <span class="day-total">${fmtHrMin(dayTotal)}</span>
+        </div>`;
+    }
+  });
+
+  const dailySectionHtml = `
+    <div class="summary-section">
+      <h3>Daily Breakdown</h3>
+      ${dailyHtml || '<p style="color:var(--text-dim);font-size:0.82rem">No data entered yet</p>'}
+    </div>`;
+
+  // ── 3. Per-student summary ──
+  // Sort by total time descending
+  const sortedStudents = [...studentsWithSessions].sort((a, b) => b.total - a.total);
+
+  let studentHtml = '';
+  sortedStudents.forEach(s => {
+    // Show small code pips for each session
+    const pipsHtml = s.codes.map(({code}) => {
+      const tokens = tokenizeCode(code);
+      let cls = 'type-direct';
+      if (tokens.length && STATUS_CODE_SET.has(tokens[0].code)) cls = 'type-status';
+      else if (tokens.length && INDIRECT_CODE_SET.has(tokens[0].code)) cls = 'type-indirect';
+      return `<span class="stu-code-pip ${cls}">${code}</span>`;
+    }).join('');
+
+    studentHtml += `
+      <div class="student-summary-row">
+        <span class="stu-name">${s.name}</span>
+        <div class="stu-codes">${pipsHtml}</div>
+        <span class="stu-time">${fmtHrMin(s.total)}</span>
+      </div>`;
+  });
+
+  const studentSectionHtml = `
+    <div class="summary-section">
+      <h3>Students <span class="section-total">${studentsWithSessions.length} seen</span></h3>
+      ${studentHtml || '<p style="color:var(--text-dim);font-size:0.82rem">No sessions entered yet</p>'}
+    </div>`;
+
+  // ── 4. Students not yet seen ──
+  let notSeenHtml = '';
+  if (studentsNotSeen.length > 0) {
+    const chips = studentsNotSeen.map(s => `<span class="not-seen-chip">${s.name.split(',')[0]}</span>`).join('');
+    notSeenHtml = `
+      <div class="summary-section">
+        <h3>Not Yet Seen <span class="section-total" style="color:var(--red)">${studentsNotSeen.length}</span></h3>
+        <div class="not-seen-list">${chips}</div>
+      </div>`;
+  } else if (appData.students.length > 0) {
+    notSeenHtml = `
+      <div class="summary-section">
+        <h3>Coverage</h3>
+        <div class="all-good">All ${appData.students.length} students have at least one session entered.</div>
+      </div>`;
+  }
+
+  // ── 5. Comments summary ──
+  let commentsHtml = '';
+  if (totalComments > 0) {
+    commentsHtml = `
+      <div class="summary-section">
+        <h3>Comments <span class="section-total">${totalComments}</span></h3>
+        ${appData.comments.filter(c => c.text.trim()).map(c => `
+          <div style="font-size:0.75rem;padding:0.3rem 0;border-bottom:1px solid var(--border)">
+            <strong>${c.student.split(',')[0]}</strong> <span style="color:var(--text-dim)">${c.date}</span>
+            <div style="color:var(--text-dim);margin-top:0.15rem">${escHtml(c.text.length > 80 ? c.text.substring(0, 80) + '...' : c.text)}</div>
+          </div>
+        `).join('')}
+      </div>`;
+  }
+
+  // ── 6. Export actions ──
+  const txt = generateTxt();
+
+  const exportHtml = `
+    <div class="summary-section export-actions">
+      <h3>Export</h3>
+      <button class="export-btn primary" id="export-txt-btn">Download .txt File</button>
+      <button class="export-btn secondary" id="export-copy-btn">Copy to Clipboard</button>
+      <button class="toggle-preview-btn" id="toggle-preview-btn">Show .txt preview</button>
+      <div class="export-text-preview" id="export-preview-text" style="display:none">${escHtml(txt)}</div>
+      <button class="export-btn danger" id="export-clear-btn" style="margin-top:0.75rem">Clear All Data &amp; Start Over</button>
+    </div>`;
+
+  // ── Assemble ──
+  panel.innerHTML = overviewHtml + dailySectionHtml + studentSectionHtml + notSeenHtml + commentsHtml + exportHtml;
+
+  // ── Wire events ──
+  document.getElementById('export-txt-btn').onclick = () => downloadTxt(txt);
+  document.getElementById('export-copy-btn').onclick = () => {
+    navigator.clipboard.writeText(txt).then(() => {
+      const btn = document.getElementById('export-copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 1500);
+    });
+  };
+  document.getElementById('toggle-preview-btn').onclick = () => {
+    const pre = document.getElementById('export-preview-text');
+    const btn = document.getElementById('toggle-preview-btn');
+    if (pre.style.display === 'none') {
+      pre.style.display = 'block';
+      btn.textContent = 'Hide .txt preview';
+    } else {
+      pre.style.display = 'none';
+      btn.textContent = 'Show .txt preview';
+    }
+  };
+  document.getElementById('export-clear-btn').onclick = () => {
+    if (confirm('Clear all entered data and return to the upload screen?')) {
+      localStorage.removeItem('smr_data');
+      location.reload();
+    }
+  };
+}
+
+function generateTxt() {
+  let lines = [];
+
+  // Header
+  lines.push('SMR template');
+  lines.push('');
+  lines.push('');
+  lines.push('## Sessions');
+  lines.push('# Codes: T=therapy, G1/G2=group, A=absent, M=makeup, Y=tele, S=scheduling, C=consult, R=record review, D=documentation, I=integrated');
+  lines.push('# Modifiers: X/=half session, X X=double, X//=less than half, X/Y=mixed (half each)');
+  lines.push('# For duplicate last names add the first name: Bade Elijah, Bade Joshua. ');
+  lines.push('# Format like this: "date (m/d), student last name, code"');
+  lines.push('# type below 👇 ');
+  lines.push('');
+
+  // Session table: header row
+  const dateHeaders = appData.dates.map(d => fmtDate(d));
+  lines.push('Student Name\t' + dateHeaders.join('\t'));
+
+  // Student rows
+  appData.students.forEach(s => {
+    const codes = appData.dates.map(d => {
+      return appData.sessions[sessionKey(s.name, d)] || '';
+    });
+    lines.push(s.name + '\t' + codes.join('\t'));
+  });
+
+  // Comments
+  lines.push('————————————————————————————');
+  lines.push('## Comments');
+  lines.push('# Format: "student last name, comment text"');
+  lines.push('# type below 👇 ');
+  lines.push('');
+
+  appData.comments.forEach(c => {
+    if (c.text.trim()) {
+      // Extract last name (before comma) and lowercase it
+      const lastName = c.student.split(',')[0].trim().toLowerCase();
+      lines.push(`${lastName}, ${c.date}: ${c.text.trim()}`);
+    }
+  });
+
+  // Notes
+  lines.push('');
+  lines.push('————————————————————————————');
+  lines.push('## Notes');
+  lines.push('# Format: "date, activity (time spent)"');
+  lines.push('# Time formats: (30 min), (1hr), (45 mins), (15m), (1.5 hours) all work. ');
+  lines.push('# type below 👇 ');
+  lines.push('');
+
+  const weekdayDates = appData.dates.filter(d => !isWeekend(d));
+  weekdayDates.forEach(d => {
+    const dateKey = fmtDate(d);
+    const activities = (appData.notes[dateKey] || []).filter(a => a.activity.trim());
+    if (activities.length > 0) {
+      const actStr = activities.map(a => `${a.activity.trim()} (${a.time.trim()})`).join(' ');
+      lines.push(`${dateKey}, ${actStr}`);
+    }
+  });
+
+  return lines.join('\n');
+}
+
+function downloadTxt(txt) {
+  const blob = new Blob([txt], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+
+  // Build filename from source filename
+  const base = appData.filename.replace(/\.xlsm?$/i, '');
+  a.download = `${base}_entries.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════
+// CODE TOKENIZER / TIME CALCULATOR
+// ══════════════════════════════════════════════
+const MULTI_CODES = ['G1', 'G2', 'A2'];
+const SINGLE_CODES = new Set('TGIMYACSRDHO'.split(''));
+const BASE_MINUTES = 30;
+
+function tokenizeCode(compound) {
+  // Parse compound code string into [{code, modifier}]
+  // modifier: null=full, '/'=half, '//'=less than half
+  const tokens = [];
+  const s = (compound || '').trim().toUpperCase();
+  let i = 0;
+
+  while (i < s.length) {
+    if (s[i] === ' ') { i++; continue; }
+
+    let code = null;
+    for (const mc of MULTI_CODES) {
+      if (s.substring(i, i + mc.length) === mc) {
+        code = mc;
+        i += mc.length;
+        break;
+      }
+    }
+    if (code === null && SINGLE_CODES.has(s[i])) {
+      code = s[i];
+      i++;
+    }
+    if (code === null) { i++; continue; }
+
+    let modifier = null;
+    if (i < s.length && s[i] === '/') {
+      if (i + 1 < s.length && s[i + 1] === '/') {
+        modifier = '//';
+        i += 2;
+      } else {
+        modifier = '/';
+        i += 1;
+      }
+    }
+    tokens.push({code, modifier});
+  }
+  return tokens;
+}
+
+function calcMinutes(compound) {
+  return tokenizeCode(compound).reduce((sum, {modifier}) => {
+    if (modifier === '//') return sum + 10;
+    if (modifier === '/') return sum + (BASE_MINUTES / 2);
+    return sum + BASE_MINUTES;
+  }, 0);
+}
+
+function explainCode(compound) {
+  const tokens = tokenizeCode(compound);
+  if (!tokens.length) return '';
+  const parts = tokens.map(({code, modifier}) => {
+    if (modifier === '//') return `${code}// (<half, 10m)`;
+    if (modifier === '/') return `${code}/ (half, ${BASE_MINUTES/2}m)`;
+    return `${code} (${BASE_MINUTES}m)`;
+  });
+  return `${parts.join(' + ')} = ${calcMinutes(compound)} min`;
+}
+
+// Which codes are "direct" (billable student contact time) vs status vs indirect
+const DIRECT_CODE_SET = new Set(['T', 'G1', 'G2', 'I', 'M', 'Y']);
+const STATUS_CODE_SET = new Set(['A', 'A2', 'O', 'H']);
+const INDIRECT_CODE_SET = new Set(['C', 'S', 'R', 'D']);
+
+function classifyMinutes(compound) {
+  // Returns {direct, indirect, status} minute totals
+  const result = {direct: 0, indirect: 0, status: 0};
+  tokenizeCode(compound).forEach(({code, modifier}) => {
+    const mins = modifier === '//' ? 10 : modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES;
+    if (DIRECT_CODE_SET.has(code)) result.direct += mins;
+    else if (INDIRECT_CODE_SET.has(code)) result.indirect += mins;
+    else if (STATUS_CODE_SET.has(code)) result.status += mins;
+  });
+  return result;
+}
+
+function fmtHrMin(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}hr`;
+  return `${h}hr ${m}m`;
+}
+
+// ── Counts ──
+function updateCounts() {
+  const totalSessions = Object.values(appData.sessions).filter(v => v).length;
+  document.getElementById('session-count').textContent = totalSessions;
+  document.getElementById('comment-count').textContent = appData.comments.filter(c => c.text.trim()).length;
+}
+
+// ── Helpers ──
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════════
+// EVENT WIRING
+// ══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  // Tab navigation
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+      if (tab.dataset.panel === 'comments') renderComments();
+      if (tab.dataset.panel === 'notes') renderNotes();
+      if (tab.dataset.panel === 'export') renderExport();
+    };
+  });
+
+  // Upload zone
+  const uploadZone = document.getElementById('upload-zone');
+  const fileInput = document.getElementById('file-input');
+
+  uploadZone.onclick = () => fileInput.click();
+
+  uploadZone.ondragover = (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); };
+  uploadZone.ondragleave = () => uploadZone.classList.remove('dragover');
+  uploadZone.ondrop = (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  };
+
+  fileInput.onchange = () => {
+    if (fileInput.files.length) handleFile(fileInput.files[0]);
+  };
+
+  // Restore button
+  const saved = loadFromStorage();
+  if (saved) {
+    const restoreBtn = document.getElementById('restore-btn');
+    restoreBtn.style.display = 'block';
+    restoreBtn.textContent = `Resume: ${saved.filename || 'saved session'}`;
+    restoreBtn.onclick = () => {
+      appData = {...appData, ...saved, selectedDate: null};
+      showApp();
+    };
+  }
+
+  // Code picker
+  document.getElementById('code-modal').onclick = (e) => {
+    if (e.target === document.getElementById('code-modal')) closeCodePicker();
+  };
+
+  document.getElementById('picker-cancel').onclick = () => closeCodePicker();
+  document.getElementById('picker-done').onclick = () => commitCode();
+  document.getElementById('picker-undo').onclick = () => undoBuilder();
+  document.getElementById('picker-clear').onclick = () => clearBuilder();
+
+  document.getElementById('add-comment-btn').onclick = addComment;
+
+  buildCodeButtons();
+});
+
+function handleFile(file) {
+  if (!file.name.match(/\.xlsx?m?$/i)) {
+    alert('Please select an .xlsm or .xlsx file');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const {students, dates} = parseXlsm(new Uint8Array(e.target.result));
+
+      appData.filename = file.name;
+      appData.students = students;
+      appData.dates = dates;
+      appData.sessions = {};
+      appData.comments = [];
+      appData.notes = {};
+      appData.selectedDate = null;
+
+      // Show upload info
+      const info = document.getElementById('upload-info');
+      info.style.display = 'block';
+      document.getElementById('upload-filename').textContent = file.name;
+      document.getElementById('upload-details').textContent = `${students.length} students · ${dates.length} dates (${fmtDate(dates[0])} – ${fmtDate(dates[dates.length-1])})`;
+
+      saveToStorage();
+
+      // Short delay then show app
+      setTimeout(showApp, 600);
+    } catch (err) {
+      alert('Error reading file: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('smr-sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
