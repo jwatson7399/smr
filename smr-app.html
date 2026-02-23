@@ -1254,37 +1254,44 @@ function parseXlsm(data) {
   }
 
   // Extract notes from cells A131+ (row index 130+)
+  // Format written by smr-filler: alternating lines of "date\nactivities"
+  // e.g. "10/1\nConsult re: caseload (1hr) Documentation (30 min)\n10/2\nEmails (15 min)"
   const notes = {};
-  for (let r = 130; r <= Math.min(135, range.e.r); r++) {
+  let allNoteText = '';
+  for (let r = 130; r <= Math.min(133, range.e.r); r++) {
     const cell = ws[XLSX.utils.encode_cell({r, c: 0})];
-    if (!cell || !cell.v) continue;
-    const raw = String(cell.v).trim();
-    if (!raw) continue;
-    // Format: "date\nactivities" or just text per line
-    const lines = raw.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length >= 1) {
-      // First line could be a date like "2/17" — check if it matches m/d pattern
-      const dateMatch = lines[0].match(/^(\d{1,2}\/\d{1,2})/);
-      if (dateMatch) {
-        const dateKey = dateMatch[1];
-        if (!notes[dateKey]) notes[dateKey] = [];
-        // Remaining lines are activities, possibly with time in parens
-        for (let li = 1; li < lines.length; li++) {
-          const timeMatch = lines[li].match(/\(([^)]+)\)\s*$/);
-          const time = timeMatch ? timeMatch[1].trim() : '';
-          const activity = timeMatch ? lines[li].replace(/\([^)]+\)\s*$/, '').trim() : lines[li];
-          if (activity) notes[dateKey].push({activity, time});
+    if (cell && cell.v != null && String(cell.v).trim()) {
+      allNoteText += (allNoteText ? '\n' : '') + String(cell.v).trim();
+    }
+  }
+  if (allNoteText) {
+    const lines = allNoteText.split('\n').map(l => l.trim()).filter(l => l);
+    let currentDateKey = null;
+    for (const line of lines) {
+      // Check if this line is a date (m/d pattern, standalone)
+      const dateOnly = line.match(/^(\d{1,2}\/\d{1,2})$/);
+      if (dateOnly) {
+        currentDateKey = dateOnly[1];
+        if (!notes[currentDateKey]) notes[currentDateKey] = [];
+        continue;
+      }
+      // Otherwise it's an activities line — split by "(time)" boundaries
+      // Each activity looks like: "Activity name (time)" repeated
+      const target = currentDateKey || null;
+      if (!target) continue;
+      if (!notes[target]) notes[target] = [];
+      // Split into individual "activity (time)" segments using regex
+      const segments = line.match(/[^(]+\([^)]+\)/g);
+      if (segments) {
+        for (const seg of segments) {
+          const tm = seg.match(/\(([^)]+)\)\s*$/);
+          const time = tm ? tm[1].trim() : '';
+          const activity = tm ? seg.replace(/\([^)]+\)\s*$/, '').trim() : seg.trim();
+          if (activity) notes[target].push({activity, time});
         }
-        // If only the date line exists with activity on same line
-        if (lines.length === 1) {
-          const rest = lines[0].substring(dateMatch[0].length).replace(/^[,\s]+/, '').trim();
-          if (rest) {
-            const timeMatch = rest.match(/\(([^)]+)\)\s*$/);
-            const time = timeMatch ? timeMatch[1].trim() : '';
-            const activity = timeMatch ? rest.replace(/\([^)]+\)\s*$/, '').trim() : rest;
-            if (activity) notes[dateKey].push({activity, time});
-          }
-        }
+      } else if (line.trim()) {
+        // No parenthesized times — treat whole line as one activity
+        notes[target].push({activity: line.trim(), time: ''});
       }
     }
   }
