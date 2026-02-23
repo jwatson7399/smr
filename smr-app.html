@@ -973,6 +973,9 @@ body {
   font-size: 0.68rem;
 }
 
+.chart-cell-tap { cursor: pointer; }
+.chart-cell-tap:active { background: var(--surface2) !important; }
+
 .chart-code-t { color: var(--code-t); background: rgba(0,184,148,0.08); }
 .chart-code-g { color: var(--code-g); background: rgba(108,92,231,0.08); }
 .chart-code-a { color: var(--code-a); background: rgba(225,112,85,0.08); }
@@ -1357,6 +1360,8 @@ function commitCode() {
   renderStudentList();
   updateCounts();
   closeCodePicker();
+  // Re-render chart if it's the active panel
+  if (document.getElementById('panel-chart').classList.contains('active')) renderChart();
 }
 
 function appendToBuilder(str) {
@@ -1960,17 +1965,13 @@ function renderChart() {
   html += '<th>Comments</th></tr></thead><tbody>';
 
   // Rows
-  students.forEach(s => {
+  students.forEach((s, si) => {
     html += '<tr>';
     html += `<td class="chart-name-col">${escHtml(s.name)}</td>`;
-    visibleDates.forEach(d => {
+    visibleDates.forEach((d, di) => {
       const code = appData.sessions[sessionKey(s.name, d)] || '';
-      if (code) {
-        const colorCls = 'chart-' + getCodeColorClass(code);
-        html += `<td class="chart-code ${colorCls}">${escHtml(code)}</td>`;
-      } else {
-        html += '<td></td>';
-      }
+      const colorCls = code ? ' chart-' + getCodeColorClass(code) : '';
+      html += `<td class="chart-code chart-cell-tap${colorCls}" data-si="${si}" data-di="${di}">${code ? escHtml(code) : ''}</td>`;
     });
     const cmt = commentMap[s.name] ? commentMap[s.name].join('; ') : '';
     html += `<td class="chart-comment-col" title="${escHtml(cmt)}">${escHtml(cmt)}</td>`;
@@ -2015,6 +2016,15 @@ function renderChart() {
 
   html += '</tbody></table></div>';
   panel.innerHTML = html;
+
+  // Wire up cell taps to open code picker
+  panel.querySelectorAll('.chart-cell-tap').forEach(cell => {
+    cell.onclick = () => {
+      const si = parseInt(cell.dataset.si);
+      const di = parseInt(cell.dataset.di);
+      openCodePicker(students[si], visibleDates[di]);
+    };
+  });
 }
 
 function generateTxt() {
