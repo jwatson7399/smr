@@ -1950,11 +1950,8 @@ function renderChart() {
     commentMap[c.student].push(c.text.trim());
   });
 
-  // Filter students: show those with at least one session or comment
-  const activeStudents = appData.students.filter(s =>
-    visibleDates.some(d => appData.sessions[sessionKey(s.name, d)]) || commentMap[s.name]
-  );
-  const students = activeStudents.length ? activeStudents : appData.students;
+  // Show all students always so the full chart is visible and editable
+  const students = appData.students;
 
   // Header
   let html = '<div class="chart-container"><table class="chart-table"><thead><tr>';
