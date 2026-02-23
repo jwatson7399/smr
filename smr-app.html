@@ -980,6 +980,28 @@ body {
 .chart-code-m { color: var(--code-m); background: rgba(0,206,201,0.08); }
 .chart-code-other { color: var(--code-other); background: rgba(99,110,114,0.08); }
 
+.chart-total-row td {
+  border-top: 2px solid var(--border);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.chart-total-label {
+  font-weight: 700 !important;
+  font-size: 0.68rem !important;
+  color: var(--text-dim) !important;
+}
+
+.chart-total-cell {
+  font-weight: 600;
+}
+
+.chart-grand-total td {
+  border-top: 2px solid var(--accent);
+  color: var(--accent) !important;
+  font-weight: 700;
+}
+
 .chart-table td.chart-comment-col {
   text-align: left;
   font-size: 0.62rem;
@@ -1954,6 +1976,42 @@ function renderChart() {
     html += `<td class="chart-comment-col" title="${escHtml(cmt)}">${escHtml(cmt)}</td>`;
     html += '</tr>';
   });
+
+  // ── Totals rows ──
+  // Code totals per date (from sessions)
+  html += '<tr class="chart-total-row"><td class="chart-name-col chart-total-label">Codes</td>';
+  visibleDates.forEach(d => {
+    let mins = 0;
+    students.forEach(s => {
+      const code = appData.sessions[sessionKey(s.name, d)];
+      if (code) mins += calcMinutes(code);
+    });
+    html += `<td class="chart-total-cell">${mins ? fmtHrMin(mins) : ''}</td>`;
+  });
+  html += '<td></td></tr>';
+
+  // Notes totals per date
+  html += '<tr class="chart-total-row"><td class="chart-name-col chart-total-label">Notes</td>';
+  visibleDates.forEach(d => {
+    const dateKey = fmtDate(d);
+    const mins = dateTotalMins(dateKey);
+    html += `<td class="chart-total-cell">${mins ? fmtHrMin(mins) : ''}</td>`;
+  });
+  html += '<td></td></tr>';
+
+  // Combined total per date
+  html += '<tr class="chart-total-row chart-grand-total"><td class="chart-name-col chart-total-label">Total</td>';
+  visibleDates.forEach(d => {
+    let codeMins = 0;
+    students.forEach(s => {
+      const code = appData.sessions[sessionKey(s.name, d)];
+      if (code) codeMins += calcMinutes(code);
+    });
+    const noteMins = dateTotalMins(fmtDate(d));
+    const total = codeMins + noteMins;
+    html += `<td class="chart-total-cell">${total ? fmtHrMin(total) : ''}</td>`;
+  });
+  html += '<td></td></tr>';
 
   html += '</tbody></table></div>';
   panel.innerHTML = html;
