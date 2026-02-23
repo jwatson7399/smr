@@ -600,7 +600,31 @@ body {
   padding: 0.5rem 0.6rem;
   margin-bottom: 0.4rem;
   border: 1px solid var(--border);
+  transition: opacity 0.15s, transform 0.15s;
 }
+
+.note-activity-card.dragging {
+  opacity: 0.4;
+}
+
+.note-activity-card.drag-over {
+  border-color: var(--accent);
+  transform: scale(1.01);
+}
+
+.drag-handle {
+  cursor: grab;
+  color: var(--text-dim);
+  font-size: 1rem;
+  padding: 0 0.2rem;
+  flex-shrink: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  line-height: 1;
+}
+
+.drag-handle:active { cursor: grabbing; }
 
 .note-activity-top {
   display: flex;
@@ -1195,7 +1219,77 @@ function parseXlsm(data) {
     students.push({name, freq: String(freq), duration: String(dur), district: String(dist), site: String(site), type: String(type)});
   }
 
-  return {students, dates};
+  // Extract existing session codes from the grid (row 5+, col 6+)
+  const sessions = {};
+  for (let r = 5; r <= range.e.r; r++) {
+    const nameCell = ws[XLSX.utils.encode_cell({r, c: 0})];
+    if (!nameCell || !nameCell.v) continue;
+    const name = String(nameCell.v).trim();
+    if (!name || name === 'For Internal Use' || name.startsWith('TOTAL') || name.startsWith('KEY')) break;
+
+    for (let c = 6; c < 6 + dates.length; c++) {
+      const cell = ws[XLSX.utils.encode_cell({r, c})];
+      if (cell && cell.v != null && String(cell.v).trim()) {
+        const dateObj = dates[c - 6];
+        if (dateObj) {
+          const key = `${name}|${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,'0')}-${String(dateObj.getDate()).padStart(2,'0')}`;
+          sessions[key] = String(cell.v).trim();
+        }
+      }
+    }
+  }
+
+  // Extract comments from column W (col index 22) for each student row
+  const comments = [];
+  for (let r = 5; r <= range.e.r; r++) {
+    const nameCell = ws[XLSX.utils.encode_cell({r, c: 0})];
+    if (!nameCell || !nameCell.v) continue;
+    const name = String(nameCell.v).trim();
+    if (!name || name === 'For Internal Use' || name.startsWith('TOTAL') || name.startsWith('KEY')) break;
+
+    const commentCell = ws[XLSX.utils.encode_cell({r, c: 22})];
+    if (commentCell && commentCell.v != null && String(commentCell.v).trim()) {
+      comments.push({student: name, date: '', text: String(commentCell.v).trim()});
+    }
+  }
+
+  // Extract notes from cells A131+ (row index 130+)
+  const notes = {};
+  for (let r = 130; r <= Math.min(135, range.e.r); r++) {
+    const cell = ws[XLSX.utils.encode_cell({r, c: 0})];
+    if (!cell || !cell.v) continue;
+    const raw = String(cell.v).trim();
+    if (!raw) continue;
+    // Format: "date\nactivities" or just text per line
+    const lines = raw.split('\n').map(l => l.trim()).filter(l => l);
+    if (lines.length >= 1) {
+      // First line could be a date like "2/17" — check if it matches m/d pattern
+      const dateMatch = lines[0].match(/^(\d{1,2}\/\d{1,2})/);
+      if (dateMatch) {
+        const dateKey = dateMatch[1];
+        if (!notes[dateKey]) notes[dateKey] = [];
+        // Remaining lines are activities, possibly with time in parens
+        for (let li = 1; li < lines.length; li++) {
+          const timeMatch = lines[li].match(/\(([^)]+)\)\s*$/);
+          const time = timeMatch ? timeMatch[1].trim() : '';
+          const activity = timeMatch ? lines[li].replace(/\([^)]+\)\s*$/, '').trim() : lines[li];
+          if (activity) notes[dateKey].push({activity, time});
+        }
+        // If only the date line exists with activity on same line
+        if (lines.length === 1) {
+          const rest = lines[0].substring(dateMatch[0].length).replace(/^[,\s]+/, '').trim();
+          if (rest) {
+            const timeMatch = rest.match(/\(([^)]+)\)\s*$/);
+            const time = timeMatch ? timeMatch[1].trim() : '';
+            const activity = timeMatch ? rest.replace(/\([^)]+\)\s*$/, '').trim() : rest;
+            if (activity) notes[dateKey].push({activity, time});
+          }
+        }
+      }
+    }
+  }
+
+  return {students, dates, sessions, comments, notes};
 }
 
 // ══════════════════════════════════════════════
@@ -1622,8 +1716,9 @@ function renderNotes() {
       </span>`;
 
       activitiesHtml += `
-        <div class="note-activity-card">
+        <div class="note-activity-card" draggable="true" data-date="${dateKey}" data-ai="${ai}">
           <div class="note-activity-top">
+            <span class="drag-handle" data-date="${dateKey}" data-ai="${ai}">⠿</span>
             <input type="text" value="${escHtml(act.activity)}" placeholder="Activity description" data-date="${dateKey}" data-ai="${ai}" data-field="activity">
             <button class="remove-activity" data-date="${dateKey}" data-ai="${ai}">×</button>
           </div>
@@ -1718,6 +1813,108 @@ function renderNotes() {
         const inputs = container.querySelectorAll(`input[data-date="${date}"][data-field="activity"]`);
         if (inputs.length) inputs[inputs.length-1].focus();
       }, 50);
+    };
+  });
+
+  // Wire up drag-and-drop reordering
+  let dragDateKey = null, dragIdx = null;
+
+  container.querySelectorAll('.note-activity-card[draggable]').forEach(card => {
+    card.ondragstart = (e) => {
+      dragDateKey = card.dataset.date;
+      dragIdx = parseInt(card.dataset.ai);
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    };
+    card.ondragend = () => {
+      card.classList.remove('dragging');
+      container.querySelectorAll('.note-activity-card').forEach(c => c.classList.remove('drag-over'));
+      dragDateKey = null;
+      dragIdx = null;
+    };
+    card.ondragover = (e) => {
+      e.preventDefault();
+      if (card.dataset.date !== dragDateKey) return;
+      e.dataTransfer.dropEffect = 'move';
+      card.classList.add('drag-over');
+    };
+    card.ondragleave = () => card.classList.remove('drag-over');
+    card.ondrop = (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const targetIdx = parseInt(card.dataset.ai);
+      if (card.dataset.date !== dragDateKey || targetIdx === dragIdx) return;
+      const arr = appData.notes[dragDateKey];
+      const [moved] = arr.splice(dragIdx, 1);
+      arr.splice(targetIdx, 0, moved);
+      saveToStorage();
+      renderNotes();
+    };
+  });
+
+  // Touch drag-and-drop for mobile
+  container.querySelectorAll('.drag-handle').forEach(handle => {
+    let touchCard = null, touchClone = null, touchDateKey = null, touchIdx = null;
+    let startY = 0, cards = [];
+
+    handle.ontouchstart = (e) => {
+      e.preventDefault();
+      touchCard = handle.closest('.note-activity-card');
+      touchDateKey = handle.dataset.date;
+      touchIdx = parseInt(handle.dataset.ai);
+      startY = e.touches[0].clientY;
+
+      // Collect sibling cards for same date
+      cards = [...container.querySelectorAll(`.note-activity-card[data-date="${touchDateKey}"]`)];
+
+      // Create floating clone
+      touchClone = touchCard.cloneNode(true);
+      touchClone.style.cssText = `position:fixed;left:${touchCard.getBoundingClientRect().left}px;top:${touchCard.getBoundingClientRect().top}px;width:${touchCard.offsetWidth}px;z-index:1000;opacity:0.85;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.4);`;
+      document.body.appendChild(touchClone);
+      touchCard.classList.add('dragging');
+    };
+
+    handle.ontouchmove = (e) => {
+      if (!touchClone) return;
+      e.preventDefault();
+      const y = e.touches[0].clientY;
+      const dy = y - startY;
+      touchClone.style.top = (touchCard.getBoundingClientRect().top + dy) + 'px';
+
+      // Highlight drop target
+      cards.forEach(c => c.classList.remove('drag-over'));
+      const target = cards.find(c => {
+        if (c === touchCard) return false;
+        const r = c.getBoundingClientRect();
+        return y > r.top && y < r.bottom;
+      });
+      if (target) target.classList.add('drag-over');
+    };
+
+    handle.ontouchend = (e) => {
+      if (!touchClone) return;
+      document.body.removeChild(touchClone);
+      touchCard.classList.remove('dragging');
+      cards.forEach(c => c.classList.remove('drag-over'));
+
+      const y = e.changedTouches[0].clientY;
+      const target = cards.find(c => {
+        if (c === touchCard) return false;
+        const r = c.getBoundingClientRect();
+        return y > r.top && y < r.bottom;
+      });
+
+      if (target) {
+        const targetIdx = parseInt(target.dataset.ai);
+        const arr = appData.notes[touchDateKey];
+        const [moved] = arr.splice(touchIdx, 1);
+        arr.splice(targetIdx, 0, moved);
+        saveToStorage();
+        renderNotes();
+      }
+
+      touchClone = null;
+      touchCard = null;
     };
   });
 }
@@ -2278,21 +2475,28 @@ function handleFile(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
-      const {students, dates} = parseXlsm(new Uint8Array(e.target.result));
+      const parsed = parseXlsm(new Uint8Array(e.target.result));
 
       appData.filename = file.name;
-      appData.students = students;
-      appData.dates = dates;
-      appData.sessions = {};
-      appData.comments = [];
-      appData.notes = {};
+      appData.students = parsed.students;
+      appData.dates = parsed.dates;
+      appData.sessions = parsed.sessions || {};
+      appData.comments = parsed.comments || [];
+      appData.notes = parsed.notes || {};
       appData.selectedDate = null;
 
       // Show upload info
+      const importedCodes = Object.keys(appData.sessions).length;
+      const importedComments = appData.comments.length;
+      const importedNotes = Object.values(appData.notes).reduce((sum, acts) => sum + acts.length, 0);
       const info = document.getElementById('upload-info');
       info.style.display = 'block';
       document.getElementById('upload-filename').textContent = file.name;
-      document.getElementById('upload-details').textContent = `${students.length} students · ${dates.length} dates (${fmtDate(dates[0])} – ${fmtDate(dates[dates.length-1])})`;
+      let detailParts = [`${parsed.students.length} students`, `${parsed.dates.length} dates (${fmtDate(parsed.dates[0])} – ${fmtDate(parsed.dates[parsed.dates.length-1])})`];
+      if (importedCodes) detailParts.push(`${importedCodes} codes imported`);
+      if (importedComments) detailParts.push(`${importedComments} comments imported`);
+      if (importedNotes) detailParts.push(`${importedNotes} notes imported`);
+      document.getElementById('upload-details').textContent = detailParts.join(' · ');
 
       saveToStorage();
 
