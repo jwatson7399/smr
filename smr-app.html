@@ -912,6 +912,83 @@ body {
 
 /* ── Utility ── */
 .hidden { display: none !important; }
+
+/* ── Chart Panel ── */
+#panel-chart { overflow: auto; }
+
+.chart-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem;
+}
+
+.chart-table {
+  border-collapse: collapse;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  min-width: 100%;
+}
+
+.chart-table th, .chart-table td {
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.chart-table thead th {
+  background: var(--surface);
+  color: var(--text-dim);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.chart-table thead th .chart-day {
+  display: block;
+  font-size: 0.55rem;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.chart-table th.chart-name-col,
+.chart-table td.chart-name-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  text-align: left;
+  font-weight: 500;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-table thead th.chart-name-col { z-index: 3; }
+
+.chart-table td.chart-name-col { background: var(--bg); }
+
+.chart-table td.chart-code {
+  font-weight: 700;
+  font-size: 0.68rem;
+}
+
+.chart-code-t { color: var(--code-t); background: rgba(0,184,148,0.08); }
+.chart-code-g { color: var(--code-g); background: rgba(108,92,231,0.08); }
+.chart-code-a { color: var(--code-a); background: rgba(225,112,85,0.08); }
+.chart-code-c { color: var(--code-c); background: rgba(253,203,110,0.08); }
+.chart-code-m { color: var(--code-m); background: rgba(0,206,201,0.08); }
+.chart-code-other { color: var(--code-other); background: rgba(99,110,114,0.08); }
+
+.chart-table td.chart-comment-col {
+  text-align: left;
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+}
 </style>
 </head>
 <body>
@@ -938,6 +1015,7 @@ body {
     <button class="nav-tab active" data-panel="sessions">Sessions<span class="badge" id="session-count">0</span></button>
     <button class="nav-tab" data-panel="comments">Comments<span class="badge" id="comment-count">0</span></button>
     <button class="nav-tab" data-panel="notes">Notes</button>
+    <button class="nav-tab" data-panel="chart">Chart</button>
     <button class="nav-tab" data-panel="export">Summary</button>
   </nav>
 
@@ -962,6 +1040,9 @@ body {
     <div class="panel" id="panel-notes">
       <div id="notes-list"></div>
     </div>
+
+    <!-- Chart Panel -->
+    <div class="panel" id="panel-chart"></div>
 
     <!-- Export Panel -->
     <div class="panel" id="panel-export">
@@ -1819,6 +1900,65 @@ function renderExport() {
   };
 }
 
+// ── Chart ──
+function renderChart() {
+  const panel = document.getElementById('panel-chart');
+
+  // Determine which dates to show: weekdays, plus any weekend that has data
+  const visibleDates = appData.dates.filter(d => {
+    if (!isWeekend(d)) return true;
+    return appData.students.some(s => appData.sessions[sessionKey(s.name, d)]);
+  });
+
+  if (!visibleDates.length || !appData.students.length) {
+    panel.innerHTML = '<p style="padding:1.5rem;color:var(--text-dim);text-align:center">No data to display</p>';
+    return;
+  }
+
+  // Build comment lookup: student name -> combined comment texts
+  const commentMap = {};
+  appData.comments.forEach(c => {
+    if (!c.text.trim()) return;
+    if (!commentMap[c.student]) commentMap[c.student] = [];
+    commentMap[c.student].push(c.text.trim());
+  });
+
+  // Filter students: show those with at least one session or comment
+  const activeStudents = appData.students.filter(s =>
+    visibleDates.some(d => appData.sessions[sessionKey(s.name, d)]) || commentMap[s.name]
+  );
+  const students = activeStudents.length ? activeStudents : appData.students;
+
+  // Header
+  let html = '<div class="chart-container"><table class="chart-table"><thead><tr>';
+  html += '<th class="chart-name-col">Student</th>';
+  visibleDates.forEach(d => {
+    html += `<th><span class="chart-day">${dayName(d)}</span>${d.getMonth()+1}/${d.getDate()}</th>`;
+  });
+  html += '<th>Comments</th></tr></thead><tbody>';
+
+  // Rows
+  students.forEach(s => {
+    html += '<tr>';
+    html += `<td class="chart-name-col">${escHtml(s.name)}</td>`;
+    visibleDates.forEach(d => {
+      const code = appData.sessions[sessionKey(s.name, d)] || '';
+      if (code) {
+        const colorCls = 'chart-' + getCodeColorClass(code);
+        html += `<td class="chart-code ${colorCls}">${escHtml(code)}</td>`;
+      } else {
+        html += '<td></td>';
+      }
+    });
+    const cmt = commentMap[s.name] ? commentMap[s.name].join('; ') : '';
+    html += `<td class="chart-comment-col" title="${escHtml(cmt)}">${escHtml(cmt)}</td>`;
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  panel.innerHTML = html;
+}
+
 function generateTxt() {
   let lines = [];
 
@@ -2014,6 +2154,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
       if (tab.dataset.panel === 'comments') renderComments();
       if (tab.dataset.panel === 'notes') renderNotes();
+      if (tab.dataset.panel === 'chart') renderChart();
       if (tab.dataset.panel === 'export') renderExport();
     };
   });
