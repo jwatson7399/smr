@@ -1,0 +1,66 @@
+## Sessions
+# date, student, code
+# --- 10/1 ---
+10/1, Moret, T
+10/1, Tavarez, T
+10/1, Castillo, G1
+10/1, Ehreshman, T
+10/1, Espinosa, G2
+10/1, Garcia, G1
+10/1, Portillo Zabdiel (A), T
+10/1, Santos, GG2/
+10/1, Morales, IT
+# --- 10/2 ---
+10/2, Bernal, G2
+10/2, Cruz, G1
+10/2, Estrada, T/
+10/2, Folie Caleb (A), T
+10/2, Harmon, T
+10/2, Leandry-Belen, G1
+10/2, Lozada, T
+10/2, Marquez, G2
+10/2, Perez, G1
+10/2, Rodriguez Jacob (A), T
+10/2, Rosario, T
+10/2, Nazzal Lucas (A), T
+# --- 10/3 ---
+10/3, Bade Joshua, A
+10/3, Estrada, T
+10/3, Tavarez, T
+10/3, Castillo, G1
+10/3, Chabla, G3
+10/3, Done, G1
+10/3, Ramirez Dian, G2
+10/3, Ramirez Noah, G2
+10/3, Santos, G3
+10/3, Staudenmeier Liam (A), T
+10/3, Morales, T
+# --- 10/6 ---
+10/6, Livet, T
+10/6, Folie Caleb (A), T
+10/6, Lozada, T
+10/6, Ehreshman, T
+10/6, Espinoza, T
+10/6, Jacobo, A
+10/6, Jiminez, T
+10/6, Meija, T
+10/6, Portillo Zabdiel (B), T
+10/6, Staudenmeier Liam (A), C /T
+
+## Comments
+Bade Joshua, 10/3: attempted to see student in a group but unavailable
+Estrada, 10/2: attempted to transition student to OT with 1:1 aide unsuccessful
+Perez, Split with V.S.
+Espinoza, 10/6: student required additional 15 min to transition from therapy space to classroom
+Jacobo, 10/6: student absent
+Meija, 10/6: student seen individually due to no appropriate or available groupmate.
+Morales, 10/1: teacher requested therapist push-in to support student with self-feeding
+Portillo Zabdiel (B), 10/6: seen individually due to groupmate being absent/no other appropriate/available partner
+Santos, 10/1: student required additional time and regulatory support in order to transition back to class
+Staudenmeier Liam (A), 10/6: consulted with teacher and demonstrated sensory-regulation strategies trialed successfully in session
+
+## Notes
+10/1, Consult re: caseload review and scheduling with supervising OT (1hr) Consult with principal custodian OT supervisor about new therapy room assignment (30 min) Treatment planning/prep (30 min) Travel to #2 (15 min) Check and respond to emails (30 min) Discussed shared student needs with OTR (15 min) Clean up & sanitize (30 min) Documentation for 9 students (45 min)
+10/2, Treatment planning/prep (30 min) Check and respond to emails (15 min) Travel to #2 (15 min) Clean up & sanitize (30 min) Documentation for 12 students (1hr)
+10/3, Treatment planning/prep (30 min) Travel to #2 (15 min) Check and respond to emails (15 min) Clean up & sanitize (30 min) Documentation for 11 students (55 min)
+10/6, Treatment planning/prep (30 min) Check and respond to emails (30 min) Travel to #2 (15 min) Travel back to ECS (15 min) Clean up & sanitize at both ECS/#2 (30 min) Discuss shared student regulation strategies with OTP (15 min) Documentation for 7 students (45 min)
