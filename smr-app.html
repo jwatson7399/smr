@@ -1334,7 +1334,7 @@ function renderBuilder() {
     if (STATUS_CODE_SET.has(tok.code)) typeClass = 'type-status';
     else if (INDIRECT_CODE_SET.has(tok.code)) typeClass = 'type-indirect';
 
-    const mins = tok.modifier === '//' ? 10 : tok.modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES;
+    const mins = STATUS_CODE_SET.has(tok.code) ? 0 : (tok.modifier === '//' ? 10 : tok.modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES);
     const modLabel = tok.modifier === '//' ? ' //' : tok.modifier === '/' ? ' /' : '';
     const modDesc = tok.modifier === '//' ? '<half' : tok.modifier === '/' ? 'half' : 'full';
 
@@ -1945,7 +1945,8 @@ function tokenizeCode(compound) {
 }
 
 function calcMinutes(compound) {
-  return tokenizeCode(compound).reduce((sum, {modifier}) => {
+  return tokenizeCode(compound).reduce((sum, {code, modifier}) => {
+    if (STATUS_CODE_SET.has(code)) return sum;
     if (modifier === '//') return sum + 10;
     if (modifier === '/') return sum + (BASE_MINUTES / 2);
     return sum + BASE_MINUTES;
@@ -1975,7 +1976,7 @@ function classifyMinutes(compound) {
     const mins = modifier === '//' ? 10 : modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES;
     if (DIRECT_CODE_SET.has(code)) result.direct += mins;
     else if (INDIRECT_CODE_SET.has(code)) result.indirect += mins;
-    else if (STATUS_CODE_SET.has(code)) result.status += mins;
+    // STATUS_CODE_SET (A, A2, O, H): student not seen — 0 minutes
   });
   return result;
 }
