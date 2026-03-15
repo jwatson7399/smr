@@ -2251,15 +2251,16 @@ function generateTxt() {
   // Comments
   lines.push('————————————————————————————');
   lines.push('## Comments');
-  lines.push('# Format: "student last name, comment text"');
+  lines.push('# Format: "student name, comment text"');
   lines.push('# type below 👇 ');
   lines.push('');
 
   appData.comments.forEach(c => {
     if (c.text.trim()) {
-      // Extract last name (before comma) and lowercase it
-      const lastName = c.student.split(',')[0].trim().toLowerCase();
-      lines.push(`${lastName}, ${c.date}: ${c.text.trim()}`);
+      // Use full name (space-separated, no comma) so ambiguous students resolve correctly
+      // "Folie, Caleb (A)" → "folie caleb (a)" — the filler matches this to the right row
+      const studentKey = c.student.replace(/,/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      lines.push(`${studentKey}, ${c.date}: ${c.text.trim()}`);
     }
   });
 
