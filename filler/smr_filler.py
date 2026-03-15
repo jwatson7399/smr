@@ -111,6 +111,8 @@ def parse_input(path):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
+                if all(c in '—-–_' for c in line):
+                    continue
                 parts = [p.strip() for p in line.split(",", 1)]
                 if len(parts) == 2:
                     comments.append((parts[0], parts[1]))
@@ -248,6 +250,43 @@ def resolve_date(date_str, date_map):
 # Code Cell Parser
 # ---------------------------------------------------------------------------
 
+def _extract_codes_greedy(token):
+    """Try to extract concatenated codes from a token like 'TT/', 'G1C/', 'DD'.
+
+    Scans left-to-right, matching the longest known code at each position,
+    then consuming any trailing '/' or '//' modifier.
+
+    Returns list of (code, modifier) tuples, or None if parsing fails.
+    """
+    text = token.upper()
+    results = []
+    i = 0
+    # Sort known codes longest-first so G1 is tried before G
+    sorted_codes = sorted(KNOWN_CODES, key=len, reverse=True)
+
+    while i < len(text):
+        matched = False
+        for code in sorted_codes:
+            if text[i:i+len(code)] == code:
+                j = i + len(code)
+                if j < len(text) and text[j] == '/':
+                    if j + 1 < len(text) and text[j+1] == '/':
+                        results.append((code, 0.25))
+                        i = j + 2
+                    else:
+                        results.append((code, 0.5))
+                        i = j + 1
+                else:
+                    results.append((code, 1.0))
+                    i = j
+                matched = True
+                break
+        if not matched:
+            return None  # Can't fully parse this token
+
+    return results if results else None
+
+
 def parse_code_cell(cell_value):
     """Parse a treatment code cell into [(code, modifier), ...].
 
@@ -327,9 +366,15 @@ def parse_code_cell(cell_value):
             i += 1
             continue
 
-        # Unknown token — try to see if it's concatenated codes like "IT"
-        # This appears in the real data (row 42 has "IT")
-        # Treat as literal — pass it through but warn
+        # Unknown token — try greedy extraction of concatenated codes
+        # e.g. "TT/" → T + T/, "G1C/" → G1 + C/, "DD" → D + D
+        greedy = _extract_codes_greedy(token)
+        if greedy:
+            results.extend(greedy)
+            i += 1
+            continue
+
+        # Truly unknown — pass through but warn
         print(f"  WARN: unknown code token '{token}' in cell '{text}'")
         results.append((token.upper(), 1.0))
         i += 1
@@ -416,16 +461,21 @@ def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map):
 
 
 def fill_comments(ws, comments, student_map, ambiguous):
-    """Write comments into column W. Returns count."""
-    count = 0
+    """Write comments into column W. Returns count of students with comments."""
+    # Collect all comments per student row so multiple comments concatenate
+    row_comments = defaultdict(list)
     for student_key, text in comments:
         row = resolve_student(student_key, student_map, ambiguous)
         if row is None:
             print(f"  WARN: student not found for comment: '{student_key}'")
             continue
-        ws.cell(row=row, column=COMMENT_COL, value=text)
-        count += 1
-    return count
+        row_comments[row].append(text)
+
+    for row, texts in row_comments.items():
+        combined = "; ".join(texts)
+        ws.cell(row=row, column=COMMENT_COL, value=combined)
+
+    return len(row_comments)
 
 
 def fill_notes(ws, notes):
