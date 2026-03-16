@@ -1947,10 +1947,14 @@ function renderExport() {
   const studentsWithSessions = studentStats.filter(s => s.sessionCount > 0);
   const studentsNotSeen = studentStats.filter(s => s.sessionCount === 0);
 
-  // Totals from codes
-  let totalDirect = 0, totalIndirect = 0, totalStatus = 0;
-  studentStats.forEach(s => { totalDirect += s.direct; totalIndirect += s.indirect; totalStatus += s.status; });
-  const totalCodeMins = totalDirect + totalIndirect + totalStatus;
+  // Totals from codes (group codes deduplicated per day)
+  let totalDirect = 0, totalIndirect = 0;
+  appData.dates.forEach(d => {
+    const dt = calcDayCodeTotals(d);
+    totalDirect += dt.direct;
+    totalIndirect += dt.indirect;
+  });
+  const totalCodeMins = totalDirect + totalIndirect;
 
   // Totals from notes
   let totalNotesMins = 0;
@@ -1984,19 +1988,14 @@ function renderExport() {
   let dailyHtml = '';
   weekdays.forEach(d => {
     const dateKey = fmtDate(d);
-    let dayDirect = 0, dayIndirect = 0, dayStatus = 0;
+    const dayTotals = calcDayCodeTotals(d);
+    let dayDirect = dayTotals.direct, dayIndirect = dayTotals.indirect;
     let dayStudentCount = 0;
     appData.students.forEach(s => {
-      const code = appData.sessions[sessionKey(s.name, d)];
-      if (!code) return;
-      dayStudentCount++;
-      const cls = classifyMinutes(code);
-      dayDirect += cls.direct;
-      dayIndirect += cls.indirect;
-      dayStatus += cls.status;
+      if (appData.sessions[sessionKey(s.name, d)]) dayStudentCount++;
     });
     const dayNotesMins = dateTotalMins(dateKey);
-    const dayCodeMins = dayDirect + dayIndirect + dayStatus;
+    const dayCodeMins = dayDirect + dayIndirect;
     const dayTotal = dayCodeMins + dayNotesMins;
 
     if (dayTotal > 0 || dayStudentCount > 0) {
@@ -2176,11 +2175,8 @@ function renderChart() {
   // Code totals per date (from sessions)
   html += '<tr class="chart-total-row"><td class="chart-name-col chart-total-label">Codes</td>';
   visibleDates.forEach(d => {
-    let mins = 0;
-    students.forEach(s => {
-      const code = appData.sessions[sessionKey(s.name, d)];
-      if (code) mins += calcMinutes(code);
-    });
+    const dt = calcDayCodeTotals(d);
+    const mins = dt.direct + dt.indirect;
     html += `<td class="chart-total-cell">${mins ? fmtHrMin(mins) : ''}</td>`;
   });
   html += '<td></td></tr>';
@@ -2197,11 +2193,8 @@ function renderChart() {
   // Combined total per date
   html += '<tr class="chart-total-row chart-grand-total"><td class="chart-name-col chart-total-label">Total</td>';
   visibleDates.forEach(d => {
-    let codeMins = 0;
-    students.forEach(s => {
-      const code = appData.sessions[sessionKey(s.name, d)];
-      if (code) codeMins += calcMinutes(code);
-    });
+    const dt = calcDayCodeTotals(d);
+    const codeMins = dt.direct + dt.indirect;
     const noteMins = dateTotalMins(fmtDate(d));
     const total = codeMins + noteMins;
     html += `<td class="chart-total-cell">${total ? fmtHrMin(total) : ''}</td>`;
@@ -2380,6 +2373,30 @@ function classifyMinutes(compound) {
     if (DIRECT_CODE_SET.has(code)) result.direct += mins;
     else if (INDIRECT_CODE_SET.has(code)) result.indirect += mins;
     // STATUS_CODE_SET (A, A2, O, H): student not seen — 0 minutes
+  });
+  return result;
+}
+
+const GROUP_CODE_SET = new Set(['G1', 'G2', 'G3']);
+
+function calcDayCodeTotals(date) {
+  // Returns {direct, indirect} with group codes deduplicated per day —
+  // each G1/G2/G3 counts as one session regardless of how many students have it
+  const result = {direct: 0, indirect: 0};
+  const seenGroups = new Set();
+  appData.students.forEach(s => {
+    const code = appData.sessions[sessionKey(s.name, date)];
+    if (!code) return;
+    tokenizeCode(code).forEach(({code: c, modifier}) => {
+      if (STATUS_CODE_SET.has(c)) return;
+      if (GROUP_CODE_SET.has(c)) {
+        if (seenGroups.has(c)) return;
+        seenGroups.add(c);
+      }
+      const mins = modifier === '//' ? 10 : modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES;
+      if (DIRECT_CODE_SET.has(c)) result.direct += mins;
+      else if (INDIRECT_CODE_SET.has(c)) result.indirect += mins;
+    });
   });
   return result;
 }

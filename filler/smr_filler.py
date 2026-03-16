@@ -32,6 +32,7 @@ KNOWN_CODES = {"T", "G1", "G2", "G3", "I", "M", "A", "O", "H", "Y", "S",
 NON_BILLABLE = {"A", "O", "H"}
 SCHEDULING_CODE = "S"
 SCHEDULING_MINUTES = 15
+GROUP_CODES = {"G1", "G2", "G3"}
 
 # ---------------------------------------------------------------------------
 # Input Parser
@@ -520,6 +521,7 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
 
     for (month, day), col in date_map.items():
         total_minutes = 0
+        seen_groups = set()  # Each group code (G1, G2, G3) counts once per day
 
         # Step A: Sum session minutes from treatment grid
         for row in range(STUDENT_ROW_START, STUDENT_ROW_END + 1):
@@ -546,6 +548,10 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
                     continue
                 if code.upper() == SCHEDULING_CODE:
                     total_minutes += SCHEDULING_MINUTES
+                elif code.upper() in GROUP_CODES:
+                    if code.upper() not in seen_groups:
+                        seen_groups.add(code.upper())
+                        total_minutes += base_minutes * modifier
                 else:
                     total_minutes += base_minutes * modifier
 
