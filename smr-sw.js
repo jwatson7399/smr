@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smr-v8';
+const CACHE_NAME = 'smr-v9';
 const ASSETS = [
   'smr-app.html',
   'smr-manifest.json',
