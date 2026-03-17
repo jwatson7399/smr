@@ -938,12 +938,13 @@ body {
 .hidden { display: none !important; }
 
 /* ── Chart Panel ── */
-#panel-chart { overflow: auto; }
+#panel-chart { overflow: hidden; }
 
 .chart-container {
-  overflow-x: auto;
+  overflow: auto;
   -webkit-overflow-scrolling: touch;
   padding: 0.5rem;
+  height: 100%;
 }
 
 .chart-table {
