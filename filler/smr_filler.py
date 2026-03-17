@@ -408,13 +408,17 @@ def parse_notes_durations(notes_text, month, day):
 
     Finds the date header (e.g. "10/1") and parses all (Xmin)/(Xhr) durations
     from that date's section until the next date header or end of text.
+
+    Handles both formats:
+      - Filler format: date alone on a line, activities on the next line
+      - xlsm format:   "3/2: activities..." all on one line
     """
     if not notes_text:
         return 0
 
-    # Build pattern for this date — match "10/1" or "10/1:" at start of line
+    # Match "M/D" at start of line, NOT followed by a dash/digit (avoids "3/9-3/13")
     date_pattern = re.compile(
-        rf'^\s*{month}/{day}\s*:?\s*$', re.MULTILINE
+        rf'^\s*{month}/{day}(?![-–—/\d])\s*:?\s*', re.MULTILINE
     )
 
     # Find this date's section
@@ -422,9 +426,9 @@ def parse_notes_durations(notes_text, month, day):
     if not match:
         return 0
 
-    # Find the next date header or end
+    # Everything from after the date pattern to the next date header or end
     remaining = notes_text[match.end():]
-    next_date = re.search(r'^\s*\d{1,2}/\d{1,2}\s*:?\s*$', remaining, re.MULTILINE)
+    next_date = re.search(r'^\s*\d{1,2}/\d{1,2}(?![-–—/\d])', remaining, re.MULTILINE)
     if next_date:
         section = remaining[:next_date.start()]
     else:
@@ -527,13 +531,13 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
         for row in range(STUDENT_ROW_START, STUDENT_ROW_END + 1):
             # Read cell from the edit workbook (we may have just written to it)
             cell_val = ws_edit.cell(row=row, column=col).value
-            if not cell_val or (isinstance(cell_val, str) and cell_val.startswith("=")):
-                # It's a formula or empty — check if data_only has a value
-                data_val = ws_data.cell(row=row, column=col).value
-                if data_val and not (isinstance(data_val, str) and data_val.startswith("=")):
-                    cell_val = data_val
-                else:
-                    continue
+            if not cell_val:
+                continue
+            # Skip formula cells — they reference other sheets and can't be
+            # reliably evaluated. Only count plain-text codes (written by us
+            # or pre-existing as text values).
+            if isinstance(cell_val, str) and cell_val.startswith("="):
+                continue
 
             codes = parse_code_cell(cell_val)
             if not codes:
