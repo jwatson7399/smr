@@ -147,7 +147,7 @@ def build_student_map(ws):
     student_map = {}          # normalized key -> row
     lastname_counts = defaultdict(list)  # lastname -> [row, ...]
     # Track "last first" keys (without suffix) to detect collisions
-    # e.g. "Bade, Elijah (a)" and "Bade, Elijah (b)" both produce "bade elijah"
+    # e.g. "Brooks, Jonah (a)" and "Brooks, Jonah (b)" both produce "brooks jonah"
     base_name_counts = defaultdict(list)  # "last first" -> [row, ...]
 
     for row in range(STUDENT_ROW_START, STUDENT_ROW_END + 1):
@@ -157,14 +157,14 @@ def build_student_map(ws):
         name = str(name).strip()
         name_lower = name.lower()
 
-        # Full cell value key (e.g. "folie, caleb (a)")
+        # Full cell value key (e.g. "brooks, jonah (a)")
         student_map[name_lower] = row
 
         # Parse "Last, First" or "Last, First (A)"
         m = re.match(r'^([^,]+),\s*(.+)$', name)
         if m:
             last = m.group(1).strip().lower()
-            first_full = m.group(2).strip().lower()  # e.g. "caleb (a)"
+            first_full = m.group(2).strip().lower()  # e.g. "jonah (a)"
             first = re.sub(r'\s*\([^)]*\)\s*$', '', first_full).strip()
 
             base_key = f"{last} {first}"
@@ -194,7 +194,7 @@ def build_student_map(ws):
 def resolve_student(key, student_map, ambiguous):
     """Resolve an input student key to a row number, or None."""
     norm = key.strip().lower()
-    # Remove commas for flexible matching: "Folie, Caleb (A)" -> "folie caleb (a)"
+    # Remove commas for flexible matching: "Brooks, Jonah (A)" -> "brooks jonah (a)"
     norm_no_comma = norm.replace(",", "").strip()
     # Collapse multiple spaces
     norm_no_comma = re.sub(r'\s+', ' ', norm_no_comma)

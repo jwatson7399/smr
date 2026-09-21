@@ -74,11 +74,11 @@ python3 smr_filler.py <workbook.xlsm> <input.txt>   # produces <workbook>_filled
 
 ```
 ## Sessions
-10/1, Moret, T
-10/2, Estrada, T/
+10/1, Alvarez, T
+10/2, Chen, T/
 
 ## Comments
-Estrada, 10/2: attempted to transition student...
+Chen, 10/2: attempted to transition student...
 
 ## Notes
 10/1, Consult re: caseload review (1hr) Treatment planning/prep (30 min)

@@ -2225,7 +2225,7 @@ function generateTxt() {
   lines.push('## Sessions');
   lines.push('# Codes: T=therapy, G1/G2=group, A=absent, M=makeup, Y=tele, S=scheduling, C=consult, R=record review, D=documentation, I=integrated');
   lines.push('# Modifiers: X/=half session, X X=double, X//=less than half, X/Y=mixed (half each)');
-  lines.push('# For duplicate last names add the first name: Bade Elijah, Bade Joshua. ');
+  lines.push('# For duplicate last names add the first name: Alvarez Mia, Alvarez Leo. ');
   lines.push('# Format like this: "date (m/d), student last name, code"');
   lines.push('# type below 👇 ');
   lines.push('');
@@ -2252,7 +2252,7 @@ function generateTxt() {
   appData.comments.forEach(c => {
     if (c.text.trim()) {
       // Use full name (space-separated, no comma) so ambiguous students resolve correctly
-      // "Folie, Caleb (A)" → "folie caleb (a)" — the filler matches this to the right row
+      // "Brooks, Jonah (A)" -> "brooks jonah (a)". The filler matches this to the right row
       const studentKey = c.student.replace(/,/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
       lines.push(`${studentKey}, ${c.date}: ${c.text.trim()}`);
     }
