@@ -1,1 +1,7 @@
 filler/*.xlsm
+first trial/
+SMR Filler/
+*.xlsm
+*_entries.txt
+*_filled.*
+smr-backup-*.json

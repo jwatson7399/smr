@@ -1,0 +1,46 @@
+# Synthetic fixture. Invented names only. Used as the step 2 parity input.
+# date, student, code
+
+## Sessions
+# --- 3/2 ---
+3/2, Alvarez Mia, T
+3/2, Alvarez Leo, G1
+3/2, Brooks Jonah (A), G1
+3/2, Brooks Jonah (B), G1
+3/2, Chen Priya, T/
+3/2, Diaz Omar, TT/
+
+# --- 3/3 ---
+3/3, Alvarez Mia, TD
+3/3, Alvarez Leo, G2
+3/3, Brooks Jonah (A), G2
+3/3, Brooks Jonah (B), G1/
+3/3, Chen Priya, A
+3/3, Diaz Omar, A1
+
+# --- 3/4 ---
+3/4, Alvarez Mia, A2
+3/4, Alvarez Leo, O
+3/4, Brooks Jonah (A), H
+3/4, Brooks Jonah (B), S
+3/4, Chen Priya, S/
+3/4, Diaz Omar, C
+
+# --- 3/5 ---
+3/5, Alvarez Mia, CC/
+3/5, Alvarez Leo, R/C
+3/5, Brooks Jonah (A), D//
+
+# --- 3/6 ---
+3/6, Diaz Omar, T
+
+## Comments
+Alvarez Mia, 3/2: on time
+Chen Priya, 3/3: not in group
+Brooks Jonah (A), 3/4: school closed
+
+## Notes
+3/2, Treatment prep (30 min)
+3/3, Emails (1hr)
+3/4, Documentation (1hr 15 min)
+3/5, Clean up (45 mins)
