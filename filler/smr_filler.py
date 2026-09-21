@@ -9,6 +9,8 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
+VERSION = "2026-05-15-b"  # half-session fixed at 15m, compound notes parsed
+
 import re
 import sys
 import os
@@ -27,12 +29,17 @@ DATE_COL_END = 22          # V (inclusive — but may be None)
 COMMENT_COL = 23           # W
 TOTAL_ROW = 101
 NOTES_ROW = 131
-KNOWN_CODES = {"T", "G1", "G2", "G3", "I", "M", "A", "O", "H", "Y", "S",
+KNOWN_CODES = {"T", "G1", "G2", "G3", "I", "M", "A", "A2", "O", "H", "Y", "S",
                "R", "D", "C"}
-NON_BILLABLE = {"A", "O", "H"}
+NON_BILLABLE = {"A", "A2", "O", "H"}
 SCHEDULING_CODE = "S"
 SCHEDULING_MINUTES = 15
 GROUP_CODES = {"G1", "G2", "G3"}
+# Per spec, the slash modifiers are FIXED durations (independent of a
+# student's base session length), not "base × ratio". A 45-min student
+# with `T/` should bill 15 min, not 22.5.
+HALF_SESSION_MINUTES = 15      # `/`  modifier
+QUARTER_SESSION_MINUTES = 10   # `//` modifier
 
 # ---------------------------------------------------------------------------
 # Input Parser
@@ -207,14 +214,10 @@ def resolve_student(key, student_map, ambiguous):
     if norm_no_comma in student_map:
         return student_map[norm_no_comma]
 
-    # 3. Check if it's a last-name only lookup
+    # 3. Single-word lookup — last name not found above; warn if it's ambiguous.
     parts = norm_no_comma.split()
-    if len(parts) == 1:
-        if norm_no_comma in ambiguous:
-            print(f"  WARN: ambiguous last name '{key}' — specify first name")
-            return None
-        if norm_no_comma in student_map:
-            return student_map[norm_no_comma]
+    if len(parts) == 1 and norm_no_comma in ambiguous:
+        print(f"  WARN: ambiguous last name '{key}' — specify first name")
 
     return None
 
@@ -398,10 +401,26 @@ def parse_duration_minutes(duration_str):
     return int(m.group(1)) if m else 30
 
 
-DURATION_RE = re.compile(
-    r'\((\d+\.?\d*)\s*(min|mins|minutes|minute|mn|m|hr|hrs|hour|hours|h)\s*\)',
+# Match any (...) group, then scan its contents for one-or-more duration
+# components. This lets "(1hr 15 min)" sum to 75 instead of being dropped.
+DURATION_PAREN_RE = re.compile(r'\(([^)]+)\)')
+DURATION_COMPONENT_RE = re.compile(
+    r'(\d+\.?\d*)\s*(min|mins|minutes|minute|mn|m|hr|hrs|hour|hours|h)\b',
     re.IGNORECASE
 )
+
+
+def _sum_parens_duration(content):
+    """Sum every '<number> <unit>' component inside one set of parentheses."""
+    total = 0.0
+    for comp in DURATION_COMPONENT_RE.finditer(content):
+        amount = float(comp.group(1))
+        unit = comp.group(2).lower()
+        if unit in ('hr', 'hrs', 'hour', 'hours', 'h'):
+            amount *= 60
+        total += amount
+    return total
+
 
 def parse_notes_durations(notes_text, month, day):
     """Extract total minutes from the notes section for a specific date.
@@ -412,6 +431,7 @@ def parse_notes_durations(notes_text, month, day):
     Handles both formats:
       - Filler format: date alone on a line, activities on the next line
       - xlsm format:   "3/2: activities..." all on one line
+    Also handles compound durations inside parens, e.g. "(1hr 15 min)" -> 75.
     """
     if not notes_text:
         return 0
@@ -435,12 +455,8 @@ def parse_notes_durations(notes_text, month, day):
         section = remaining
 
     total = 0
-    for m in DURATION_RE.finditer(section):
-        amount = float(m.group(1))
-        unit = m.group(2).lower()
-        if unit in ('hr', 'hrs', 'hour', 'hours', 'h'):
-            amount *= 60
-        total += amount
+    for paren in DURATION_PAREN_RE.finditer(section):
+        total += _sum_parens_duration(paren.group(1))
 
     return total
 
@@ -448,8 +464,30 @@ def parse_notes_durations(notes_text, month, day):
 # Fill Functions
 # ---------------------------------------------------------------------------
 
+def _clear_managed_region(ws, row_start, row_end, col_start, col_end):
+    """Clear cells in the given region, skipping any that contain formulas.
+
+    The PWA exports the full intended state of the managed regions each time,
+    so the filler treats its input as authoritative: clear first, then write.
+    This is what makes PWA-side deletions actually round-trip.
+    """
+    for row in range(row_start, row_end + 1):
+        for col in range(col_start, col_end + 1):
+            cell = ws.cell(row=row, column=col)
+            v = cell.value
+            if isinstance(v, str) and v.startswith("="):
+                continue
+            if v is not None:
+                cell.value = None
+
+
 def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map):
     """Write treatment codes into the grid. Returns count of cells written."""
+    # Authoritative write: clear the grid first so deletions in the PWA propagate.
+    _clear_managed_region(
+        ws, STUDENT_ROW_START, STUDENT_ROW_END, DATE_COL_START, DATE_COL_END
+    )
+
     count = 0
     for date_str, student_key, code in sessions:
         row = resolve_student(student_key, student_map, ambiguous)
@@ -467,6 +505,11 @@ def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map):
 
 def fill_comments(ws, comments, student_map, ambiguous):
     """Write comments into column W. Returns count of students with comments."""
+    # Authoritative write: clear column W first so cleared comments in the PWA propagate.
+    _clear_managed_region(
+        ws, STUDENT_ROW_START, STUDENT_ROW_END, COMMENT_COL, COMMENT_COL
+    )
+
     # Collect all comments per student row so multiple comments concatenate
     row_comments = defaultdict(list)
     for student_key, text in comments:
@@ -499,7 +542,13 @@ def fill_notes(ws, notes):
         lines.append(date_str)
         lines.append(" ".join(texts))
 
-    full_text = "\n".join(lines)
+    # Use \r\n so the PWA's xlsm importer (which expects CRLF) round-trips cleanly.
+    full_text = "\r\n".join(lines)
+
+    # Clear A131-A133 first so leftover content from a prior run can't
+    # double-count when calculate_daily_totals re-reads the notes block.
+    for clear_row in (NOTES_ROW, NOTES_ROW + 1, NOTES_ROW + 2):
+        ws.cell(row=clear_row, column=1, value=None)
 
     # Write to A131. If very long, split across A131-A133.
     MAX_CELL = 32000  # Excel cell character limit is 32767
@@ -548,16 +597,27 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
             base_minutes = parse_duration_minutes(dur_str)
 
             for code, modifier in codes:
-                if code.upper() in NON_BILLABLE:
+                u = code.upper()
+                if u in NON_BILLABLE:
                     continue
-                if code.upper() == SCHEDULING_CODE:
+                if u == SCHEDULING_CODE:
                     total_minutes += SCHEDULING_MINUTES
-                elif code.upper() in GROUP_CODES:
-                    if code.upper() not in seen_groups:
-                        seen_groups.add(code.upper())
-                        total_minutes += base_minutes * modifier
+                    continue
+                # Modifier interpretation:
+                #   1.0  = full session  -> student's base duration
+                #   0.5  = half session  -> 15 min FIXED
+                #   0.25 = less-than-half -> 10 min FIXED
+                if modifier == 0.5:
+                    minutes = HALF_SESSION_MINUTES
+                elif modifier == 0.25:
+                    minutes = QUARTER_SESSION_MINUTES
                 else:
-                    total_minutes += base_minutes * modifier
+                    minutes = base_minutes * modifier
+                if u in GROUP_CODES:
+                    if u in seen_groups:
+                        continue
+                    seen_groups.add(u)
+                total_minutes += minutes
 
         # Step B: Add notes time for this date
         notes_minutes = parse_notes_durations(notes_text, month, day)
@@ -567,11 +627,13 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
         date_str = f"{month}/{day}"
         totals[date_str] = total_minutes
 
+        cell = ws_edit.cell(row=TOTAL_ROW, column=col)
         if total_minutes > 0:
-            excel_time = total_minutes / 1440.0
-            cell = ws_edit.cell(row=TOTAL_ROW, column=col)
-            cell.value = excel_time
+            cell.value = total_minutes / 1440.0
             cell.number_format = 'h:mm;@'
+        else:
+            # Clear any stale total carried over from a prior fill.
+            cell.value = None
 
     return totals
 
@@ -587,6 +649,7 @@ def main():
     wb_path = sys.argv[1]
     input_path = sys.argv[2]
 
+    print(f"SMR Filler version: {VERSION}")
     if not os.path.exists(wb_path):
         print(f"Error: workbook not found: {wb_path}")
         sys.exit(1)
@@ -600,6 +663,10 @@ def main():
 
     print(f"Loading workbook (data_only) from {wb_path}...")
     wb_data = openpyxl.load_workbook(wb_path, data_only=True)
+    if SHEET_NAME not in wb_data.sheetnames:
+        print(f"Error: workbook is missing the '{SHEET_NAME}' sheet.")
+        print(f"  Found sheets: {wb_data.sheetnames}")
+        sys.exit(1)
     ws_data = wb_data[SHEET_NAME]
 
     print(f"Loading workbook (formulas + VBA) from {wb_path}...")
@@ -634,7 +701,7 @@ def main():
     for extra_row in (NOTES_ROW + 1, NOTES_ROW + 2):
         extra = ws_edit.cell(row=extra_row, column=1).value
         if extra:
-            notes_text += "\n" + str(extra)
+            notes_text += "\r\n" + str(extra)
 
     print("Calculating daily totals...")
     totals = calculate_daily_totals(ws_edit, ws_data, date_map, notes_text)
