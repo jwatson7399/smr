@@ -9,7 +9,7 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
-VERSION = "2026-05-15-b"  # half-session fixed at 15m, compound notes parsed
+VERSION = "2026-09-21-a"  # S follows the 30/15 rule, A1 is non-billable, // bills as half
 
 import re
 import sys
@@ -29,17 +29,13 @@ DATE_COL_END = 22          # V (inclusive — but may be None)
 COMMENT_COL = 23           # W
 TOTAL_ROW = 101
 NOTES_ROW = 131
-KNOWN_CODES = {"T", "G1", "G2", "G3", "I", "M", "A", "A2", "O", "H", "Y", "S",
+KNOWN_CODES = {"T", "G1", "G2", "G3", "I", "M", "A", "A1", "A2", "O", "H", "Y", "S",
                "R", "D", "C"}
-NON_BILLABLE = {"A", "A2", "O", "H"}
-SCHEDULING_CODE = "S"
-SCHEDULING_MINUTES = 15
+NON_BILLABLE = {"A", "A1", "A2", "O", "H"}
 GROUP_CODES = {"G1", "G2", "G3"}
-# Per spec, the slash modifiers are FIXED durations (independent of a
-# student's base session length), not "base × ratio". A 45-min student
-# with `T/` should bill 15 min, not 22.5.
-HALF_SESSION_MINUTES = 15      # `/`  modifier
-QUARTER_SESSION_MINUTES = 10   # `//` modifier
+# Slash length is fixed, not "base x ratio". A 45-min student with T/ bills 15.
+# // is not a valid code (roundtable entry 006). It bills as half, with a warning.
+HALF_SESSION_MINUTES = 15
 
 # ---------------------------------------------------------------------------
 # Input Parser
@@ -600,17 +596,17 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
                 u = code.upper()
                 if u in NON_BILLABLE:
                     continue
-                if u == SCHEDULING_CODE:
-                    total_minutes += SCHEDULING_MINUTES
-                    continue
-                # Modifier interpretation:
-                #   1.0  = full session  -> student's base duration
-                #   0.5  = half session  -> 15 min FIXED
-                #   0.25 = less-than-half -> 10 min FIXED
+                # 1.0 = full session, student's column C duration.
+                # 0.5 = half, fixed. 0.25 is a // and bills as half.
+                # Column C stays until the 45-minute question is answered.
                 if modifier == 0.5:
                     minutes = HALF_SESSION_MINUTES
                 elif modifier == 0.25:
-                    minutes = QUARTER_SESSION_MINUTES
+                    minutes = HALF_SESSION_MINUTES
+                    print(
+                        f"  WARN: // in row {row} column {col} is not a valid code; "
+                        f"billed as {HALF_SESSION_MINUTES} min"
+                    )
                 else:
                     minutes = base_minutes * modifier
                 if u in GROUP_CODES:

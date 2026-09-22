@@ -1175,6 +1175,7 @@ const DIRECT_CODES = [
   {code: 'T', label: 'Therapy'},
   {code: 'G1', label: 'Group 1'},
   {code: 'G2', label: 'Group 2'},
+  {code: 'G3', label: 'Group 3'},
   {code: 'I', label: 'Integrated'},
   {code: 'M', label: 'Makeup'},
   {code: 'Y', label: 'Tele'},
@@ -1182,6 +1183,7 @@ const DIRECT_CODES = [
 
 const STATUS_CODES = [
   {code: 'A', label: 'Absent'},
+  {code: 'A1', label: 'Absent G1'},
   {code: 'A2', label: 'Absent Gp'},
   {code: 'O', label: 'Ther Unavail'},
   {code: 'H', label: 'School Close'},
@@ -1196,7 +1198,7 @@ const INDIRECT_CODES = [
 
 const MODIFIERS = [
   {code: '/', label: '/ Half', action: 'append'},
-  {code: '//', label: '// <Half', action: 'append'},
+  {code: '//', label: '//', action: 'append'},
   {code: 'toggle/', label: 'Toggle /', action: 'toggle'},
 ];
 
@@ -1286,15 +1288,9 @@ function parseXlsm(data) {
   }
   if (allNoteText) {
     const lines = allNoteText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
-    for (const line of lines) {
-      // Match "2/17: ..." or "2/23-2/24: ..." — skip preamble lines without dates
-      const dateLineMatch = line.match(/^(\d{1,2}\/\d{1,2})(?:\s*-\s*\d{1,2}\/\d{1,2})?:\s*(.*)/);
-      if (!dateLineMatch) continue;
-      const dateKey = dateLineMatch[1];
-      const activitiesStr = dateLineMatch[2].trim();
+    const pushActivities = (dateKey, activitiesStr) => {
       if (!notes[dateKey]) notes[dateKey] = [];
-      if (!activitiesStr) continue;
-      // Split into individual "activity (time)" segments
+      if (!activitiesStr) return;
       const segments = activitiesStr.match(/[^(]+\([^)]+\)/g);
       if (segments) {
         for (const seg of segments) {
@@ -1306,6 +1302,19 @@ function parseXlsm(data) {
       } else {
         notes[dateKey].push({activity: activitiesStr, time: ''});
       }
+    };
+    // "2/17: activities" on one line, or the filler's date-only line with
+    // activities on the following line. Skip preamble that has no date.
+    let currentKey = null;
+    for (const line of lines) {
+      const dateLineMatch = line.match(/^(\d{1,2}\/\d{1,2})(?:\s*-\s*\d{1,2}\/\d{1,2})?:?\s*(.*)$/);
+      if (dateLineMatch) {
+        currentKey = dateLineMatch[1];
+        if (!notes[currentKey]) notes[currentKey] = [];
+        pushActivities(currentKey, dateLineMatch[2].trim());
+        continue;
+      }
+      if (currentKey) pushActivities(currentKey, line);
     }
   }
 
@@ -1694,9 +1703,8 @@ function renderBuilder() {
     if (STATUS_CODE_SET.has(tok.code)) typeClass = 'type-status';
     else if (INDIRECT_CODE_SET.has(tok.code)) typeClass = 'type-indirect';
 
-    const mins = STATUS_CODE_SET.has(tok.code) ? 0 : (tok.modifier === '//' ? 10 : tok.modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES);
-    const modLabel = tok.modifier === '//' ? ' //' : tok.modifier === '/' ? ' /' : '';
-    const modDesc = tok.modifier === '//' ? '<half' : tok.modifier === '/' ? 'half' : 'full';
+    const mins = modifierMinutes(tok.code, tok.modifier);
+    const modLabel = tok.invalid === '//' ? ' //' : tok.modifier === '/' ? ' /' : '';
 
     html += `<span class="builder-token ${typeClass}">
       ${tok.code}${modLabel ? `<span class="token-mod">${modLabel}</span>` : ''}
@@ -1833,12 +1841,19 @@ const TIME_PRESETS = ['15 min', '30 min', '45 min', '1 hr', '1.5 hr', '2 hr'];
 function parseNoteMins(timeStr) {
   if (!timeStr) return 0;
   const t = timeStr.trim().toLowerCase();
-  const match = t.match(/(\d+\.?\d*)\s*(min|mins|m|hr|hrs|hour|hours)?/);
-  if (!match) return 0;
-  let val = parseFloat(match[1]);
-  const unit = match[2] || 'min';
-  if (unit.startsWith('h')) val *= 60;
-  return val;
+  const re = /(\d+\.?\d*)\s*(min|mins|minutes|minute|mn|m|hr|hrs|hour|hours|h)\b/g;
+  let total = 0;
+  let found = false;
+  let match;
+  while ((match = re.exec(t)) !== null) {
+    found = true;
+    let val = parseFloat(match[1]);
+    if (match[2].startsWith('h')) val *= 60;
+    total += val;
+  }
+  if (found) return total;
+  const bare = t.match(/(\d+\.?\d*)/);
+  return bare ? parseFloat(bare[1]) : 0;
 }
 
 function dateTotalMins(dateKey) {
@@ -2457,91 +2472,98 @@ function downloadTxt(txt) {
 // ══════════════════════════════════════════════
 // CODE TOKENIZER / TIME CALCULATOR
 // ══════════════════════════════════════════════
-const MULTI_CODES = ['G1', 'G2', 'A2'];
+// Billing numbers and code classes. Roundtable entry 006.
+const RULES = {
+  FULL: 30,
+  HALF: 15,
+  STATUS: ['A', 'A1', 'A2', 'O', 'H'],
+  GROUP: ['G1', 'G2', 'G3'],
+  DIRECT: ['T', 'G1', 'G2', 'G3', 'I', 'M', 'Y'],
+  INDIRECT: ['C', 'S', 'R', 'D'],
+};
+const MULTI_CODES = ['G1', 'G2', 'G3', 'A2', 'A1'];
 const SINGLE_CODES = new Set('TGIMYACSRDHO'.split(''));
-const BASE_MINUTES = 30;
+const DIRECT_CODE_SET = new Set(RULES.DIRECT);
+const STATUS_CODE_SET = new Set(RULES.STATUS);
+const INDIRECT_CODE_SET = new Set(RULES.INDIRECT);
+const GROUP_CODE_SET = new Set(RULES.GROUP);
+
+function codeAt(s, i) {
+  for (const mc of MULTI_CODES) {
+    if (s.substring(i, i + mc.length) === mc) return mc;
+  }
+  if (SINGLE_CODES.has(s[i])) return s[i];
+  return null;
+}
 
 function tokenizeCode(compound) {
-  // Parse compound code string into [{code, modifier}]
-  // modifier: null=full, '/'=half, '//'=less than half
+  // modifier: null = full, '/' = half. A '//' is stored as half and flagged invalid.
   const tokens = [];
   const s = (compound || '').trim().toUpperCase();
   let i = 0;
+  let halfNext = false;
 
   while (i < s.length) {
     if (s[i] === ' ') { i++; continue; }
+    const code = codeAt(s, i);
+    if (!code) { i++; continue; }
+    i += code.length;
 
-    let code = null;
-    for (const mc of MULTI_CODES) {
-      if (s.substring(i, i + mc.length) === mc) {
-        code = mc;
-        i += mc.length;
-        break;
-      }
-    }
-    if (code === null && SINGLE_CODES.has(s[i])) {
-      code = s[i];
-      i++;
-    }
-    if (code === null) { i++; continue; }
-
-    let modifier = null;
+    let modifier = halfNext ? '/' : null;
+    let invalid = null;
+    halfNext = false;
     if (i < s.length && s[i] === '/') {
       if (i + 1 < s.length && s[i + 1] === '/') {
-        modifier = '//';
+        modifier = '/';
+        invalid = '//';
         i += 2;
       } else {
         modifier = '/';
         i += 1;
+        if (codeAt(s, i)) halfNext = true;
       }
     }
-    tokens.push({code, modifier});
+    const tok = {code, modifier};
+    if (invalid) tok.invalid = invalid;
+    tokens.push(tok);
   }
   return tokens;
 }
 
+function modifierMinutes(code, modifier) {
+  if (STATUS_CODE_SET.has(code)) return 0;
+  if (modifier === '/' || modifier === '//') return RULES.HALF;
+  return RULES.FULL;
+}
+
 function calcMinutes(compound) {
-  return tokenizeCode(compound).reduce((sum, {code, modifier}) => {
-    if (STATUS_CODE_SET.has(code)) return sum;
-    if (modifier === '//') return sum + 10;
-    if (modifier === '/') return sum + (BASE_MINUTES / 2);
-    return sum + BASE_MINUTES;
-  }, 0);
+  return tokenizeCode(compound).reduce((sum, tok) => sum + modifierMinutes(tok.code, tok.modifier), 0);
 }
 
 function explainCode(compound) {
   const tokens = tokenizeCode(compound);
   if (!tokens.length) return '';
-  const parts = tokens.map(({code, modifier}) => {
-    if (modifier === '//') return `${code}// (<half, 10m)`;
-    if (modifier === '/') return `${code}/ (half, ${BASE_MINUTES/2}m)`;
-    return `${code} (${BASE_MINUTES}m)`;
+  const parts = tokens.map(({code, modifier, invalid}) => {
+    const mins = modifierMinutes(code, modifier);
+    if (invalid === '//') return `${code}// (not valid, billed ${mins}m)`;
+    if (modifier === '/') return `${code}/ (half, ${mins}m)`;
+    return `${code} (${mins}m)`;
   });
   return `${parts.join(' + ')} = ${calcMinutes(compound)} min`;
 }
 
-// Which codes are "direct" (billable student contact time) vs status vs indirect
-const DIRECT_CODE_SET = new Set(['T', 'G1', 'G2', 'I', 'M', 'Y']);
-const STATUS_CODE_SET = new Set(['A', 'A2', 'O', 'H']);
-const INDIRECT_CODE_SET = new Set(['C', 'S', 'R', 'D']);
-
 function classifyMinutes(compound) {
-  // Returns {direct, indirect, status} minute totals
   const result = {direct: 0, indirect: 0, status: 0};
   tokenizeCode(compound).forEach(({code, modifier}) => {
-    const mins = modifier === '//' ? 10 : modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES;
+    const mins = modifierMinutes(code, modifier);
     if (DIRECT_CODE_SET.has(code)) result.direct += mins;
     else if (INDIRECT_CODE_SET.has(code)) result.indirect += mins;
-    // STATUS_CODE_SET (A, A2, O, H): student not seen — 0 minutes
   });
   return result;
 }
 
-const GROUP_CODE_SET = new Set(['G1', 'G2', 'G3']);
-
 function calcDayCodeTotals(date) {
-  // Returns {direct, indirect} with group codes deduplicated per day —
-  // each G1/G2/G3 counts as one session regardless of how many students have it
+  // Group codes count once per code per day. The first one's modifier wins.
   const result = {direct: 0, indirect: 0};
   const seenGroups = new Set();
   appData.students.forEach(s => {
@@ -2553,7 +2575,7 @@ function calcDayCodeTotals(date) {
         if (seenGroups.has(c)) return;
         seenGroups.add(c);
       }
-      const mins = modifier === '//' ? 10 : modifier === '/' ? BASE_MINUTES / 2 : BASE_MINUTES;
+      const mins = modifierMinutes(c, modifier);
       if (DIRECT_CODE_SET.has(c)) result.direct += mins;
       else if (INDIRECT_CODE_SET.has(c)) result.indirect += mins;
     });
