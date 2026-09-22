@@ -290,6 +290,36 @@ body {
 .finish.over { border-color: rgba(253,203,110,.5); background: linear-gradient(180deg, rgba(253,203,110,.14), rgba(253,203,110,.03)); }
 .finish.over .gap em { color: var(--yellow); }
 
+.favhead { display: flex; justify-content: space-between; align-items: center; margin: 0.6rem 0.75rem 0.3rem; }
+.favhead h4 { margin: 0; font-size: 0.7rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.favhead h4 span { font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 0.3rem; }
+.favhead button { border: 0; background: none; color: var(--text-dim); font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+.favs { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0 0.6rem 0.3rem; }
+.favs.collapsed { display: none; }
+.favs button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 0.4rem 0.6rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+.favs button b { color: var(--text-dim); font-weight: 700; margin-left: 0.25rem; }
+.favs button.addpill { border-style: dashed; color: var(--text-dim); }
+.favs button.pin { border-color: var(--accent2); }
+.pillform, .pillmenu { margin: 0 0.6rem 0.4rem; padding: 0.6rem; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); display: none; flex-direction: column; gap: 0.35rem; }
+.pillform.open, .pillmenu.open { display: flex; }
+.pillmenu { border-color: var(--accent2); }
+.pillform input[type=text] { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 0.5rem; font-size: 0.85rem; }
+.pillform .r, .pillmenu .r { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
+.pillform .hint { font-size: 0.65rem; color: var(--text-dim); }
+.pillform .save, .pillform .cancel, .pillmenu button { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 8px; padding: 0.45rem 0.65rem; font-weight: 600; cursor: pointer; font-size: 0.78rem; }
+.pillform .save { border: 0; background: var(--accent); color: #fff; }
+.pillmenu button.danger { color: var(--red); border-color: var(--red); }
+.note-dayhead { margin: 0.7rem 0.75rem 0.2rem; font-size: 0.7rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; display: flex; justify-content: space-between; }
+.noteitem { background: var(--surface); border-radius: 12px; padding: 0.45rem 0.55rem; display: flex; gap: 0.4rem; align-items: center; margin: 0 0.6rem 0.35rem; }
+.noteitem input[type=text] { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 0.4rem 0.5rem; font-size: 0.85rem; }
+.mins { display: flex; align-items: center; gap: 2px; }
+.mins button { width: 26px; height: 28px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 6px; font-weight: 700; cursor: pointer; }
+.mins output { min-width: 34px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 0.75rem; }
+.noteitem .x, .one-off { border: 0; background: none; color: var(--text-dim); cursor: pointer; }
+.noteitem .x { font-size: 1.1rem; }
+.one-off { display: block; margin: 0.3rem 0.6rem; font-size: 0.78rem; text-align: left; padding: 0.4rem 0.1rem; }
+.notes-empty { padding: 0.3rem 0.75rem; color: var(--text-dim); font-size: 0.78rem; }
+
 .session-head {
   margin: 0.55rem 0.75rem 0.25rem;
   font-size: 0.7rem;
@@ -2259,239 +2289,218 @@ function dateTotalMins(dateKey) {
   return (appData.notes[dateKey] || []).reduce((sum, a) => sum + parseNoteMins(a.time), 0);
 }
 
-function renderNotes() {
-  const container = document.getElementById('notes-list');
-  container.innerHTML = '';
+let notesPillsOpen = true;
+let pillForm = null;
+let pillMenuIndex = null;
+let pillHoldTimer = null;
+let pillHoldFired = false;
 
-  const weekdayDates = appData.dates.filter(d => !isWeekend(d));
-
-  weekdayDates.forEach(d => {
-    const dateKey = fmtDate(d);
-    if (!appData.notes[dateKey]) appData.notes[dateKey] = [];
-
-    const entry = document.createElement('div');
-    entry.className = 'note-entry';
-
-    const dayTotal = dateTotalMins(dateKey);
-
-    let activitiesHtml = '';
-    appData.notes[dateKey].forEach((act, ai) => {
-      const currentTime = (act.time || '').trim();
-      const isPreset = TIME_PRESETS.includes(currentTime);
-      const isCustom = currentTime && !isPreset;
-
-      const chipsHtml = TIME_PRESETS.map(t =>
-        `<button class="time-chip${currentTime === t ? ' selected' : ''}" data-date="${dateKey}" data-ai="${ai}" data-time="${t}">${t}</button>`
-      ).join('') +
-      `<span class="time-chip custom-time-chip${isCustom ? ' selected' : ''}">
-        <input type="text" class="custom-time-inline" value="${isCustom ? escHtml(currentTime) : ''}" placeholder="other" data-date="${dateKey}" data-ai="${ai}" data-field="custom-time">
-      </span>`;
-
-      activitiesHtml += `
-        <div class="note-activity-card" draggable="true" data-date="${dateKey}" data-ai="${ai}">
-          <div class="note-activity-top">
-            <span class="drag-handle" data-date="${dateKey}" data-ai="${ai}">⠿</span>
-            <input type="text" value="${escHtml(act.activity)}" placeholder="Activity description" data-date="${dateKey}" data-ai="${ai}" data-field="activity">
-            <button class="remove-activity" data-date="${dateKey}" data-ai="${ai}">×</button>
-          </div>
-          <div class="time-chips">${chipsHtml}</div>
-        </div>
-      `;
-    });
-
-    entry.innerHTML = `
-      <div class="note-date-header">
-        <span>${dayName(d)} ${dateKey}</span>
-        <span class="note-date-total">${dayTotal > 0 ? fmtHrMin(dayTotal) : ''}</span>
-      </div>
-      ${activitiesHtml}
-      <button class="add-activity-btn" data-date="${dateKey}">+ Add activity</button>
-    `;
-    container.appendChild(entry);
-  });
-
-  // Wire up activity name inputs
-  container.querySelectorAll('input[data-field="activity"]').forEach(inp => {
-    inp.oninput = () => {
-      const {date, ai} = inp.dataset;
-      appData.notes[date][parseInt(ai)].activity = inp.value;
-      saveToStorage();
-    };
-  });
-
-  // Wire up preset time chips
-  container.querySelectorAll('.time-chip[data-time]').forEach(chip => {
-    chip.onclick = () => {
-      const {date, ai, time} = chip.dataset;
-      const idx = parseInt(ai);
-      // Toggle: if already selected, deselect
-      if (appData.notes[date][idx].time === time) {
-        appData.notes[date][idx].time = '';
-      } else {
-        appData.notes[date][idx].time = time;
-      }
-      saveToStorage();
-      renderNotes();
-    };
-  });
-
-  // Wire up custom time inputs
-  container.querySelectorAll('input[data-field="custom-time"]').forEach(inp => {
-    inp.oninput = () => {
-      const {date, ai} = inp.dataset;
-      const idx = parseInt(ai);
-      const val = inp.value.trim();
-      appData.notes[date][idx].time = val;
-      // Highlight the custom chip
-      const chip = inp.closest('.custom-time-chip');
-      if (val) {
-        chip.classList.add('selected');
-        // Deselect any preset chips in this row
-        chip.closest('.time-chips').querySelectorAll('.time-chip[data-time]').forEach(c => c.classList.remove('selected'));
-      } else {
-        chip.classList.remove('selected');
-      }
-      saveToStorage();
-      // Update the date total without full re-render (avoids losing focus)
-      const noteEntry = inp.closest('.note-entry');
-      const totalEl = noteEntry.querySelector('.note-date-total');
-      const total = dateTotalMins(date);
-      totalEl.textContent = total > 0 ? fmtHrMin(total) : '';
-    };
-
-    // On focus, select all text for easy replacement
-    inp.onfocus = () => inp.select();
-  });
-
-  // Wire up remove buttons
-  container.querySelectorAll('.remove-activity').forEach(btn => {
-    btn.onclick = () => {
-      const {date, ai} = btn.dataset;
-      appData.notes[date].splice(parseInt(ai), 1);
-      saveToStorage();
-      renderNotes();
-    };
-  });
-
-  // Wire up add buttons
-  container.querySelectorAll('.add-activity-btn').forEach(btn => {
-    btn.onclick = () => {
-      const date = btn.dataset.date;
-      appData.notes[date].push({activity: '', time: ''});
-      saveToStorage();
-      renderNotes();
-      // Focus new activity input
-      setTimeout(() => {
-        const inputs = container.querySelectorAll(`input[data-date="${date}"][data-field="activity"]`);
-        if (inputs.length) inputs[inputs.length-1].focus();
-      }, 50);
-    };
-  });
-
-  // Wire up drag-and-drop reordering
-  let dragDateKey = null, dragIdx = null;
-
-  container.querySelectorAll('.note-activity-card[draggable]').forEach(card => {
-    card.ondragstart = (e) => {
-      dragDateKey = card.dataset.date;
-      dragIdx = parseInt(card.dataset.ai);
-      card.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    };
-    card.ondragend = () => {
-      card.classList.remove('dragging');
-      container.querySelectorAll('.note-activity-card').forEach(c => c.classList.remove('drag-over'));
-      dragDateKey = null;
-      dragIdx = null;
-    };
-    card.ondragover = (e) => {
-      e.preventDefault();
-      if (card.dataset.date !== dragDateKey) return;
-      e.dataTransfer.dropEffect = 'move';
-      card.classList.add('drag-over');
-    };
-    card.ondragleave = () => card.classList.remove('drag-over');
-    card.ondrop = (e) => {
-      e.preventDefault();
-      card.classList.remove('drag-over');
-      const targetIdx = parseInt(card.dataset.ai);
-      if (card.dataset.date !== dragDateKey || targetIdx === dragIdx) return;
-      const arr = appData.notes[dragDateKey];
-      const [moved] = arr.splice(dragIdx, 1);
-      arr.splice(targetIdx, 0, moved);
-      saveToStorage();
-      renderNotes();
-    };
-  });
-
-  // Touch drag-and-drop for mobile
-  container.querySelectorAll('.drag-handle').forEach(handle => {
-    let touchCard = null, touchClone = null, touchDateKey = null, touchIdx = null;
-    let startY = 0, cards = [];
-
-    handle.ontouchstart = (e) => {
-      e.preventDefault();
-      touchCard = handle.closest('.note-activity-card');
-      touchDateKey = handle.dataset.date;
-      touchIdx = parseInt(handle.dataset.ai);
-      startY = e.touches[0].clientY;
-
-      // Collect sibling cards for same date
-      cards = [...container.querySelectorAll(`.note-activity-card[data-date="${touchDateKey}"]`)];
-
-      // Create floating clone
-      touchClone = touchCard.cloneNode(true);
-      touchClone.style.cssText = `position:fixed;left:${touchCard.getBoundingClientRect().left}px;top:${touchCard.getBoundingClientRect().top}px;width:${touchCard.offsetWidth}px;z-index:1000;opacity:0.85;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.4);`;
-      document.body.appendChild(touchClone);
-      touchCard.classList.add('dragging');
-    };
-
-    handle.ontouchmove = (e) => {
-      if (!touchClone) return;
-      e.preventDefault();
-      const y = e.touches[0].clientY;
-      const dy = y - startY;
-      touchClone.style.top = (touchCard.getBoundingClientRect().top + dy) + 'px';
-
-      // Highlight drop target
-      cards.forEach(c => c.classList.remove('drag-over'));
-      const target = cards.find(c => {
-        if (c === touchCard) return false;
-        const r = c.getBoundingClientRect();
-        return y > r.top && y < r.bottom;
-      });
-      if (target) target.classList.add('drag-over');
-    };
-
-    handle.ontouchend = (e) => {
-      if (!touchClone) return;
-      document.body.removeChild(touchClone);
-      touchCard.classList.remove('dragging');
-      cards.forEach(c => c.classList.remove('drag-over'));
-
-      const y = e.changedTouches[0].clientY;
-      const target = cards.find(c => {
-        if (c === touchCard) return false;
-        const r = c.getBoundingClientRect();
-        return y > r.top && y < r.bottom;
-      });
-
-      if (target) {
-        const targetIdx = parseInt(target.dataset.ai);
-        const arr = appData.notes[touchDateKey];
-        const [moved] = arr.splice(touchIdx, 1);
-        arr.splice(targetIdx, 0, moved);
-        saveToStorage();
-        renderNotes();
-      }
-
-      touchClone = null;
-      touchCard = null;
-    };
-  });
+function activityKey(text) {
+  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-// ── Export ──
+function orderedActivities() {
+  return activities.map((a, i) => ({a, i})).sort((x, y) => (y.a.pinned - x.a.pinned) || ((y.a.count || 0) - (x.a.count || 0)));
+}
+
+function learnActivitiesFromNotes(notes) {
+  const groups = {};
+  Object.values(notes || {}).forEach(list => {
+    (list || []).forEach(item => {
+      const text = (item.activity || '').trim();
+      const mins = parseNoteMins(item.time);
+      if (!text || !mins) return;
+      const key = activityKey(text);
+      if (!groups[key]) groups[key] = {text, mins: []};
+      groups[key].mins.push(mins);
+    });
+  });
+  Object.values(groups).forEach(g => {
+    const sorted = g.mins.slice().sort((a, b) => a - b);
+    const mid = sorted.length % 2
+      ? sorted[(sorted.length - 1) / 2]
+      : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+    const rounded = Math.max(15, Math.round(mid / 15) * 15);
+    const existing = activities.find(a => activityKey(a.text) === activityKey(g.text));
+    if (existing) existing.count = Math.max(existing.count || 0, g.mins.length);
+    else activities.push({text: g.text, defaultMinutes: rounded, count: g.mins.length, lastUsed: '', pinned: false});
+  });
+  saveActivities();
+}
+
+function selectedNoteKey() {
+  const date = appData.dates[appData.selectedDate];
+  return date ? fmtDate(date) : null;
+}
+
+function selectedNotes() {
+  const key = selectedNoteKey();
+  if (!key) return [];
+  if (!appData.notes[key]) appData.notes[key] = [];
+  return appData.notes[key];
+}
+
+function readPillDraft() {
+  const input = document.getElementById('pill-text');
+  if (input && pillForm) pillForm.text = input.value;
+}
+
+function renderNotes() {
+  const container = document.getElementById('notes-list');
+  const date = appData.dates[appData.selectedDate];
+  if (!date) {
+    container.innerHTML = '<p class="notes-empty">No date selected</p>';
+    return;
+  }
+  const key = fmtDate(date);
+  const list = selectedNotes();
+  const total = dateTotalMins(key);
+  const ordered = orderedActivities();
+  const pills = ordered.map(({a, i}) =>
+    `<button type="button" data-pill="${i}" class="${a.pinned ? 'pin' : ''}">${escHtml(a.text)}<b>${a.defaultMinutes}m</b></button>`
+  ).join('') + '<button type="button" class="addpill" data-act="pill-open">+ New pill</button>';
+  const formOpen = pillForm ? ' open' : '';
+  const menuOpen = pillMenuIndex !== null && activities[pillMenuIndex] ? ' open' : '';
+  const menuName = menuOpen ? escHtml(activities[pillMenuIndex].text) + ' · ' + activities[pillMenuIndex].defaultMinutes + 'm' : '';
+  const rows = list.map((item, i) =>
+    `<div class="noteitem"><input type="text" value="${escHtml(item.activity || '')}" data-note-text="${i}"><div class="mins"><button type="button" data-step="${i}" data-delta="-15">−</button><output>${parseNoteMins(item.time)}m</output><button type="button" data-step="${i}" data-delta="15">+</button></div><button type="button" class="x" data-del-note="${i}">×</button></div>`
+  ).join('') || '<p class="notes-empty">No activities yet today.</p>';
+  container.innerHTML = `
+    <div class="note-dayhead"><span>${dayName(date)} ${key}</span><span>${total ? fmtClock(total) : ''}</span></div>
+    <div class="favhead"><h4>Your usual activities <span>${activities.length} pills</span></h4><button type="button" data-act="pills-toggle">${notesPillsOpen ? 'Hide' : 'Show'}</button></div>
+    <div class="favs${notesPillsOpen ? '' : ' collapsed'}">${pills}</div>
+    <div class="pillform${formOpen}">
+      <input type="text" id="pill-text" placeholder="Activity, for example treatment prep" value="${pillForm ? escHtml(pillForm.text) : ''}">
+      <div class="r"><span style="font-size:0.78rem;color:var(--text-dim)">Usual time</span><div class="mins"><button type="button" data-act="pill-step" data-delta="-15">−</button><output>${pillForm ? pillForm.minutes : 30}m</output><button type="button" data-act="pill-step" data-delta="15">+</button></div><button type="button" class="cancel" data-act="pill-cancel">Cancel</button><button type="button" class="save" data-act="pill-save">${pillForm && pillForm.editing !== null ? 'Save' : 'Save pill'}</button></div>
+      <div class="hint">Saved pills carry across periods. Tap one to add it to this day. Hold to edit, pin, or remove. The usual time changes only when you edit it.</div>
+    </div>
+    <div class="pillmenu${menuOpen}"><div style="font-size:0.78rem"><b>${menuName}</b></div><div class="r"><button type="button" data-act="pill-edit">Edit</button><button type="button" data-act="pill-pin">${menuOpen && activities[pillMenuIndex].pinned ? 'Unpin' : 'Pin to front'}</button><button type="button" class="danger" data-act="pill-remove">Remove pill</button><button type="button" data-act="pill-close">Close</button></div></div>
+    <div class="note-dayhead"><span>This day's activities</span><span>${list.length ? list.length + ' items' : ''}</span></div>
+    ${rows}
+    <button type="button" class="one-off" data-act="one-off">+ Add a one-off activity</button>
+  `;
+}
+
+function onNotesClick(e) {
+  const date = appData.dates[appData.selectedDate];
+  if (!date) return;
+  const btn = e.target.closest('button');
+  if (!btn || !document.getElementById('notes-list').contains(btn)) return;
+  if (btn.dataset.pill !== undefined) {
+    if (pillHoldFired) { pillHoldFired = false; return; }
+    const activity = activities[parseInt(btn.dataset.pill, 10)];
+    const before = activity.defaultMinutes;
+    addNoteFromActivity(date, activity);
+    if (activity.defaultMinutes !== before) activity.defaultMinutes = before;
+    renderNotes();
+    return;
+  }
+  const act = btn.dataset.act;
+  if (act === 'pills-toggle') { notesPillsOpen = !notesPillsOpen; renderNotes(); return; }
+  if (act === 'pill-open') {
+    pillForm = {text: '', minutes: 30, editing: null};
+    pillMenuIndex = null;
+    renderNotes();
+    setTimeout(() => { const el = document.getElementById('pill-text'); if (el) el.focus(); }, 30);
+    return;
+  }
+  if (act === 'pill-cancel') { pillForm = null; renderNotes(); return; }
+  if (act === 'pill-step' && pillForm) {
+    readPillDraft();
+    pillForm.minutes = Math.max(15, pillForm.minutes + parseInt(btn.dataset.delta, 10));
+    renderNotes();
+    return;
+  }
+  if (act === 'pill-save' && pillForm) {
+    readPillDraft();
+    const text = pillForm.text.trim();
+    if (!text) return;
+    if (pillForm.editing !== null && activities[pillForm.editing]) {
+      activities[pillForm.editing].text = text;
+      activities[pillForm.editing].defaultMinutes = pillForm.minutes;
+    } else {
+      activities.push({text, defaultMinutes: pillForm.minutes, count: 0, lastUsed: '', pinned: false});
+    }
+    saveActivities();
+    pillForm = null;
+    renderNotes();
+    renderDayTotal();
+    return;
+  }
+  if (act === 'pill-close') { pillMenuIndex = null; renderNotes(); return; }
+  if (act === 'pill-pin' && pillMenuIndex !== null) {
+    activities[pillMenuIndex].pinned = !activities[pillMenuIndex].pinned;
+    saveActivities();
+    pillMenuIndex = null;
+    renderNotes();
+    return;
+  }
+  if (act === 'pill-remove' && pillMenuIndex !== null) {
+    activities.splice(pillMenuIndex, 1);
+    saveActivities();
+    pillMenuIndex = null;
+    pillForm = null;
+    renderNotes();
+    renderDayTotal();
+    return;
+  }
+  if (act === 'pill-edit' && pillMenuIndex !== null) {
+    const activity = activities[pillMenuIndex];
+    pillForm = {text: activity.text, minutes: activity.defaultMinutes, editing: pillMenuIndex};
+    pillMenuIndex = null;
+    renderNotes();
+    return;
+  }
+  if (act === 'one-off') {
+    selectedNotes().push({activity: '', time: '15 min'});
+    saveToStorage();
+    renderNotes();
+    renderDayTotal();
+    const inputs = document.querySelectorAll('#notes-list [data-note-text]');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+    return;
+  }
+  if (btn.dataset.step !== undefined) {
+    const list = selectedNotes();
+    const item = list[parseInt(btn.dataset.step, 10)];
+    item.time = Math.max(0, parseNoteMins(item.time) + parseInt(btn.dataset.delta, 10)) + ' min';
+    saveToStorage();
+    renderNotes();
+    renderDayTotal();
+    return;
+  }
+  if (btn.dataset.delNote !== undefined) {
+    selectedNotes().splice(parseInt(btn.dataset.delNote, 10), 1);
+    saveToStorage();
+    renderNotes();
+    renderDayTotal();
+  }
+}
+
+function onNotesInput(e) {
+  if (e.target.dataset.noteText === undefined) return;
+  const list = selectedNotes();
+  const item = list[parseInt(e.target.dataset.noteText, 10)];
+  if (!item) return;
+  item.activity = e.target.value;
+  saveToStorage();
+}
+
+function onPillHoldStart(e) {
+  const btn = e.target.closest('[data-pill]');
+  if (!btn || !document.getElementById('notes-list').contains(btn)) return;
+  clearTimeout(pillHoldTimer);
+  pillHoldTimer = setTimeout(() => {
+    pillHoldFired = true;
+    pillMenuIndex = parseInt(btn.dataset.pill, 10);
+    pillForm = null;
+    renderNotes();
+  }, 450);
+}
+
+function onPillHoldEnd() { clearTimeout(pillHoldTimer); }
+
+
 function renderExport() {
   const panel = document.getElementById('panel-export');
   const weekdays = appData.dates.filter(d => !isWeekend(d));
@@ -2787,6 +2796,7 @@ function renderChart() {
     };
   });
 }
+
 
 function generateTxt() {
   let lines = [];
@@ -3127,6 +3137,16 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   activities = loadActivities();
+  const notesList = document.getElementById('notes-list');
+  notesList.addEventListener('click', onNotesClick);
+  notesList.addEventListener('input', onNotesInput);
+  notesList.addEventListener('pointerdown', onPillHoldStart);
+  notesList.addEventListener('pointerup', onPillHoldEnd);
+  notesList.addEventListener('pointercancel', onPillHoldEnd);
+  notesList.addEventListener('pointerleave', onPillHoldEnd);
+  notesList.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('[data-pill]')) e.preventDefault();
+  });
   buildCodeButtons();
 });
 
@@ -3179,6 +3199,7 @@ function handleFile(file) {
       appData.sessions = parsed.sessions || {};
       appData.comments = parsed.comments || [];
       appData.notes = parsed.notes || {};
+      learnActivitiesFromNotes(appData.notes);
       appData.selectedDate = null;
 
       // Show upload info
