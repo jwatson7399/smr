@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- Step 3 mockup for the SMR app. Invented students only. Approved 2026-09-22; see SMR Roundtable.md entry 035. -->
+<title>SMR Finish the Day</title>
+<style>
+:root{
+  --bg:#1a1a2e; --surface:#16213e; --surface2:#0f3460; --accent:#e94560; --accent2:#533483;
+  --text:#eee; --dim:#8892a4; --border:#2a3a5c; --green:#00b894; --amber:#fdcb6e; --red:#e17055;
+  --t:#00b894; --g:#6c5ce7; --a:#e17055; --c:#fdcb6e;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{margin:0;background:#0d0d18;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro",system-ui,sans-serif;font-size:14px;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box}
+.stage{min-height:100%;display:flex;flex-direction:column;align-items:center;padding-block:18px;padding-inline:16px;gap:14px}
+.note{max-width:390px;width:100%;color:var(--dim);font-size:12px;line-height:1.45}
+.note b{color:var(--text);font-weight:600}
+.controls{display:flex;gap:8px;flex-wrap:wrap;max-width:390px;width:100%}
+.controls button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer}
+.phonewrap{position:relative;width:100%;max-width:390px}
+.phone{width:100%;background:var(--bg);border-radius:28px;border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column;height:760px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.topbar{padding:12px 14px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);background:var(--surface)}
+.topbar .name{font-weight:700;font-size:15px}
+.topbar .period{font-size:10px;color:var(--dim);display:block;font-weight:400}
+.topbar .saved{font-size:11px;color:var(--dim)}
+.topbar .saved i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px;vertical-align:middle}
+.tabs{display:flex;background:var(--surface);padding:4px;gap:4px;border-bottom:1px solid var(--border)}
+.tab{flex:1;border:0;background:none;color:var(--dim);font-weight:600;font-size:12px;padding:9px 2px;border-radius:8px;cursor:pointer}
+.tab.active{background:var(--surface2);color:var(--text)}
+.tab .badge{background:var(--accent);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px}
+.tab .badge.ok{background:var(--green)}
+.panel{flex:1;overflow-y:auto;display:none;padding-bottom:24px}
+.panel.active{display:block}
+.dates{display:flex;gap:6px;overflow-x:auto;padding:8px;scrollbar-width:none;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:2}
+.dates::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;padding:6px 10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--dim);font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}
+.chip small{display:block;font-size:9px;font-weight:400;text-transform:uppercase;letter-spacing:.04em}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.ok{box-shadow:inset 0 -3px 0 var(--green)}
+.chip.short{box-shadow:inset 0 -3px 0 var(--amber)}
+.chip.wknd{opacity:.35}
+.daybar{margin:10px;padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--border)}
+.daybar .row{display:flex;justify-content:space-between;align-items:baseline}
+.daybar .big{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.daybar .big span{font-size:12px;color:var(--dim);font-weight:500}
+.daybar .left{font-size:12px;font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--bg);margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .2s}
+.daybar.ok .bar i{background:var(--green)} .daybar.ok .left{color:var(--green)}
+.daybar.over .bar i{background:var(--amber)} .daybar.over .left{color:var(--amber)}
+.daybar .split{display:flex;gap:12px;margin-top:6px;font-size:11px;color:var(--dim)}
+.daybar .split b{color:var(--text);font-weight:600}
+h4{margin:12px 12px 6px;font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between}
+h4 span{font-weight:400;text-transform:none;letter-spacing:0}
+.list{padding:0 10px;display:flex;flex-direction:column;gap:6px}
+.search{margin:0 10px 6px;display:flex;gap:6px}
+.search input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:8px 10px;font-size:13px;min-width:0}
+.search button{border:1px solid var(--border);background:var(--bg);color:var(--dim);border-radius:10px;padding:0 10px;font-size:11px;font-weight:600;cursor:pointer}
+.search button.on{color:var(--text);border-color:var(--accent)}
+.stu{background:var(--surface);border-radius:12px;padding:9px 10px;display:flex;align-items:center;gap:8px;border:1px solid transparent}
+.stu.done{border-color:var(--border)}
+.stu .who{flex:1;min-width:0}
+.stu .who .n{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stu .who .f{font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.code{min-width:44px;text-align:center;font-weight:800;font-size:13px;padding:5px 7px;border-radius:8px;background:rgba(136,146,164,.12);color:var(--dim);border:0;cursor:pointer}
+.code.T,.code.I,.code.M{background:rgba(0,184,148,.16);color:var(--t)}
+.code.G{background:rgba(108,92,231,.18);color:var(--g)}
+.code.A,.code.O,.code.H{background:rgba(225,112,85,.16);color:var(--a)}
+.code.C,.code.D,.code.R,.code.S{background:rgba(253,203,110,.16);color:var(--c)}
+.acts{display:flex;gap:4px}
+.acts button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;font-size:11px;font-weight:700;padding:6px 8px;cursor:pointer;min-width:34px}
+.acts button.seen{border-color:var(--green);color:var(--green)}
+.acts button.abs{border-color:var(--red);color:var(--red)}
+.acts button.more{color:var(--dim)}
+.finish{margin:10px;border-radius:14px;background:linear-gradient(180deg,rgba(233,69,96,.12),rgba(233,69,96,.04));border:1px solid rgba(233,69,96,.45);padding:12px}
+.finish .gap{font-weight:800;font-size:15px}
+.finish .gap em{font-style:normal;color:var(--accent)}
+.finish .sub{font-size:11px;color:var(--dim);margin-top:2px}
+.fit{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fit button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:10px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;display:flex;gap:6px;align-items:center;text-align:left}
+.fit button b{font-weight:800;color:var(--dim);font-variant-numeric:tabular-nums}
+.fit button.exact{border-color:var(--green);background:rgba(0,184,148,.12)}
+.fit button.exact b{color:var(--green)}
+.fit button.combo{border-style:dashed}
+.finish .foot{font-size:10px;color:var(--dim);margin-top:8px}
+.finish.done{border-color:rgba(0,184,148,.5);background:linear-gradient(180deg,rgba(0,184,148,.14),rgba(0,184,148,.03))}
+.finish.done .gap em{color:var(--green)}
+.finish.over{border-color:rgba(253,203,110,.5);background:linear-gradient(180deg,rgba(253,203,110,.14),rgba(253,203,110,.03))}
+.finish.over .gap em{color:var(--amber)}
+.noteitem{background:var(--surface);border-radius:12px;padding:8px 10px;display:flex;gap:8px;align-items:center}
+.noteitem input[type=text]{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 8px;font-size:13px;min-width:0}
+.mins{display:flex;align-items:center;gap:2px}
+.mins button{width:26px;height:28px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:6px;font-weight:700;cursor:pointer}
+.mins output{min-width:34px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;font-size:12px}
+.noteitem .x{border:0;background:none;color:var(--dim);font-size:18px;cursor:pointer;padding:0 2px}
+.favhead{display:flex;justify-content:space-between;align-items:center;margin:10px 12px 6px}
+.favhead h4{margin:0}
+.favhead button{border:0;background:none;color:var(--dim);font-size:12px;font-weight:600;cursor:pointer;padding:4px 6px}
+.favs{display:flex;flex-wrap:wrap;gap:6px;padding:0 10px 6px}
+.favs.collapsed{display:none}
+.favs button.addpill{border-style:dashed;color:var(--dim)}
+.favs button.pin{border-color:var(--accent2)}
+.pillform{margin:0 10px 8px;padding:10px;border-radius:12px;background:var(--surface);border:1px solid var(--border);display:none;flex-direction:column;gap:6px}
+.pillform.open{display:flex}
+.pillform input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;font-size:13px}
+.pillform .r{display:flex;gap:6px;align-items:center}
+.pillform .r .mins{flex:1;justify-content:center}
+.pillform .r button.save{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
+.pillform .r button.cancel{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:8px 12px;font-weight:600;cursor:pointer}
+.pillform .hint{font-size:10px;color:var(--dim)}
+.pillmenu{margin:0 10px 8px;padding:10px;border-radius:12px;background:var(--surface);border:1px solid var(--accent2);display:none;flex-direction:column;gap:6px}
+.pillmenu.open{display:flex}
+.pillmenu .r{display:flex;gap:6px;flex-wrap:wrap}
+.pillmenu .r button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.pillmenu .r button.danger{color:var(--red);border-color:var(--red)}
+.favs button{flex-shrink:0;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:10px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.favs button b{color:var(--dim);font-weight:700;margin-left:4px}
+.collapse{margin:6px 10px;border:0;background:none;color:var(--dim);font-size:12px;text-align:left;padding:8px 2px;cursor:pointer;width:calc(100% - 20px)}
+.issue{background:var(--surface);border-radius:12px;padding:9px 10px;display:flex;gap:10px;align-items:flex-start;border-left:3px solid var(--amber)}
+.issue.red{border-left-color:var(--red)} .issue.ok{border-left-color:var(--green)}
+.issue .t{font-weight:600;font-size:13px}
+.issue .d{font-size:11px;color:var(--dim);margin-top:2px}
+.issue .go{margin-left:auto;color:var(--dim);font-size:16px}
+.export{margin:12px 10px 0;display:flex;flex-direction:column;gap:6px}
+.export button{border:0;border-radius:12px;padding:12px;font-weight:700;font-size:14px;cursor:pointer}
+.export .p{background:var(--accent);color:#fff}
+.export .p[disabled]{opacity:.45}
+.export .s{background:var(--surface2);color:var(--text)}
+.settings{margin:10px;padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--border);font-size:12px;display:flex;flex-direction:column;gap:6px}
+.settings div{display:flex;justify-content:space-between;align-items:center}
+.settings b{font-weight:600}
+.settings span{color:var(--dim)}
+.sheet{position:absolute;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:5;border-radius:28px;overflow:hidden}
+.sheet.open{display:flex}
+.sheet .card{width:100%;background:var(--surface);border-radius:20px 20px 0 0;padding:14px 14px 18px}
+.sheet .card h5{margin:0 0 8px;font-size:14px}
+.sheet .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.sheet .grid button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:10px;padding:10px 4px;font-weight:800;font-size:14px;cursor:pointer}
+.sheet .grid button small{display:block;font-size:9px;color:var(--dim);font-weight:400}
+.sheet textarea{width:100%;margin-top:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:8px;font-size:13px;font-family:inherit;min-height:52px}
+.sheet .row2{display:flex;gap:6px;margin-top:8px}
+.sheet .row2 button{flex:1;border:0;border-radius:10px;padding:10px;font-weight:700;cursor:pointer}
+.chartwrap{overflow:auto;height:100%}
+.ct{border-collapse:separate;border-spacing:0;font-size:11px;min-width:100%}
+.ct th,.ct td{padding:6px 5px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);white-space:nowrap;text-align:center;font-variant-numeric:tabular-nums}
+.ct thead th{position:sticky;top:0;background:var(--surface);z-index:2;font-weight:700;color:var(--dim)}
+.ct thead th .cd{display:block;font-size:9px;font-weight:400;text-transform:uppercase}
+.ct thead th.today{color:var(--text);box-shadow:inset 0 -3px 0 var(--accent)}
+.ct th.nm,.ct td.nm{position:sticky;left:0;background:var(--bg);text-align:left;max-width:118px;min-width:118px;overflow:hidden;text-overflow:ellipsis;z-index:1;font-weight:600}
+.ct thead th.nm{z-index:3;background:var(--surface)}
+.ct td.cell{cursor:pointer;min-width:38px;font-weight:800}
+.ct td.cell:active{background:var(--surface2)}
+.ct td.cell.today{background:rgba(233,69,96,.06)}
+.ct td.c-T,.ct td.c-I,.ct td.c-M{color:var(--t);background:rgba(0,184,148,.08)}
+.ct td.c-G{color:var(--g);background:rgba(108,92,231,.1)}
+.ct td.c-A,.ct td.c-O,.ct td.c-H{color:var(--a);background:rgba(225,112,85,.08)}
+.ct td.c-C,.ct td.c-D,.ct td.c-R,.ct td.c-S{color:var(--c);background:rgba(253,203,110,.08)}
+.ct td.cmt{text-align:left;max-width:180px;overflow:hidden;text-overflow:ellipsis;color:var(--dim);font-weight:400}
+.ct tr.tot td{background:var(--surface);font-weight:700;color:var(--dim)}
+.ct tr.tot td.nm{background:var(--surface)}
+.ct tr.grand td{color:var(--text);border-top:2px solid var(--border)}
+.ct tr.grand td.ok{color:var(--green)} .ct tr.grand td.over{color:var(--red)}
+.ct tr.grand td.short{color:#fff;background:rgba(225,112,85,.35);box-shadow:inset 0 0 0 1px var(--red),0 0 10px rgba(225,112,85,.7);animation:glow 1.6s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:inset 0 0 0 1px var(--red),0 0 6px rgba(225,112,85,.4)}50%{box-shadow:inset 0 0 0 1px var(--red),0 0 14px rgba(225,112,85,.95)}}
+@media (prefers-reduced-motion:reduce){.ct tr.grand td.short{animation:none}}
+.ct td.notecell{cursor:pointer;color:var(--text)}
+.ct td.notecell:active{background:var(--surface2)}
+.nsheet .card{max-height:88%;overflow-y:auto}
+.nsheet .fitrow{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
+.nsheet .fitrow button{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:10px;padding:6px 9px;font-size:12px;font-weight:600;cursor:pointer}
+.nsheet .fitrow button b{color:var(--dim);margin-left:4px}
+.nsheet .tot{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:6px}
+.nsheet .tot b{color:var(--text)}
+.nsheet .tot b.ok{color:var(--green)} .nsheet .tot b.short{color:var(--red)}
+.ct td.wk{opacity:.35}
+.legend{max-width:390px;width:100%;display:flex;flex-direction:column;gap:6px}
+.legend div{display:flex;gap:8px;font-size:12px;color:var(--dim);line-height:1.4}
+.legend div b{color:var(--text);font-weight:700;min-width:18px}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+
+
+<div class="stage">
+  <div class="note"><b>Step 3 mockup, schedule-agnostic.</b> Invented students. Tap anything. Nothing is saved.</div>
+  <div class="controls">
+    <button data-scen="1">Mid-afternoon (4:30)</button>
+    <button data-scen="2">Day complete</button>
+    <button data-scen="3">Over 9:00</button>
+    <button data-scen="0">Empty day</button>
+  </div>
+
+  <div class="phonewrap" id="P"></div>
+
+  <div class="legend">
+    <div><b>1</b>Day total against 6:30, split into codes and notes. Green at 6:30, amber over 9:00.</div>
+    <div><b>2</b>Finish the day: your usual activities as chips, sized to the gap. Green closes it exactly. Nothing is added without a tap.</div>
+    <div><b>3</b>Roster: alphabetical, every student, with search and a Coded / Not yet filter. Each row has the suggested code, A, and the full picker. A opens the comment box.</div>
+    <div><b>4</b>Notes: her usual activities as pills at the top. Tap adds it to today; hold to edit, pin or remove; + New pill saves a new one with its usual time. Hide collapses the row. Pills carry across periods.</div>
+    <div><b>5</b>Chart: the grid she already uses, kept as is. Sticky names and dates, tap a cell on the selected day to code it, comments at the right. Tap any day's Notes cell to open that day's notes and add from your pills. The Total row is green at 6:30 or more, glows red on any day that logs under 6:30, and turns red text over 9:00.</div>
+    <div><b>6</b>Review: what Donna would ask about, before you export. Red blocks export.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+const MIN=390, CEIL=540, DAY='Tue 9/22';
+const roster=[
+ {n:'Alvarez, Mia',f:'2xWk Ind',s:'ECS'},{n:'Alvarez, Leo',f:'1xWk Gp',s:'#2'},{n:'Brooks, Jonah (A)',f:'1xWk Ind',s:'ECS'},
+ {n:'Brooks, Jonah (B)',f:'1xWk Gp',s:'ECS'},{n:'Castro, Nia',f:'1xWk Gp',s:'#2'},{n:'Delgado, Sam',f:'2xWk Ind',s:'ECS'},
+ {n:'Farah, Idris',f:'1xWk Gp',s:'#2'},{n:'Grant, Lily',f:'1xWk Ind',s:'ECS'},{n:'Hale, Owen',f:'1xMO',s:'#2'},
+ {n:'Iqbal, Zara',f:'1xWk Ind',s:'#2'},{n:'Jones, Eli',f:'2xWk Gp',s:'ECS'},{n:'Kim, Aria',f:'1xWk Gp',s:'ECS'},
+ {n:'Lopez, Mateo',f:'1xWk Ind',s:'#2'},{n:'Moreno, Ava',f:'1xWk Gp',s:'ECS'},{n:'Nash, Theo',f:'2xWk Ind',s:'#2'},
+ {n:'Ortega, Luna',f:'1xWk Ind',s:'ECS'},{n:'Patel, Ravi',f:'1xWk Gp',s:'#2'},{n:'Quinn, Isla',f:'1xWk Gp',s:'ECS'},
+];
+const FAVS=[
+ {t:'Treatment prep',m:30,c:41},{t:'Checked and corresponded to emails',m:30,c:39},
+ {t:'Travel to PS2',m:15,c:35},{t:'Cleaned and sanitized treatment space',m:30,c:31},
+ {t:'Edplan documentation for N students',m:45,c:28},{t:'Consulted with OTP-JM on shared students',m:30,c:12},
+ {t:'Progress reports',m:60,c:6},{t:'Treatment planning',m:60,c:9},
+];
+const MULTI=['G1','G2','G3','M2','M3','A1','A2'], SINGLE='TGIMYACSRDHO', STAT=new Set(['A','A1','A2','O','H']), GRP=new Set(['G1','G2','G3','M2','M3']);
+function tok(s){ s=(s||'').toUpperCase().replace(/\(M\)/g,''); const out=[]; let i=0;
+  while(i<s.length){ let code=null; for(const m of MULTI){ if(s.startsWith(m,i)){code=m;i+=m.length;break;} }
+    if(!code&&SINGLE.includes(s[i])){code=s[i];i++;} if(!code){i++;continue;}
+    let half=false,bad=false; if(s[i]==='/'){half=true;i++; if(s[i]==='/'){bad=true;i++;}} out.push({code,half,bad}); }
+  return out; }
+const hm=m=>Math.floor(m/60)+':'+String(m%60).padStart(2,'0');
+const cls=c=>{const k=tok(c)[0]; if(!k)return ''; return (k.code[0]==='G'||(k.code[0]==='M'&&k.code.length>1))?'G':k.code[0];};
+
+const DATES=[['Wed','9/16'],['Thu','9/17'],['Fri','9/18'],['Sat','9/19'],['Sun','9/20'],['Mon','9/21'],['Tue','9/22'],['Wed','9/23'],['Thu','9/24'],['Fri','9/25'],['Sat','9/26'],['Sun','9/27'],['Mon','9/28'],['Tue','9/29'],['Wed','9/30']];
+const TODAY_I=6;
+// codes on earlier days of the period (fixed for the demo)
+const PRIOR={
+ '9/16':{'Alvarez, Mia':'T','Farah, Idris':'G1','Patel, Ravi':'G1','Nash, Theo':'T','Iqbal, Zara':'T','Quinn, Isla':'G2','Moreno, Ava':'G2'},
+ '9/17':{'Delgado, Sam':'T','Brooks, Jonah (B)':'G2','Jones, Eli':'G2','Kim, Aria':'A','Lopez, Mateo':'T','Ortega, Luna':'C/'},
+ '9/18':{'Alvarez, Mia':'T','Nash, Theo':'T','Grant, Lily':'T','Castro, Nia':'G1','Alvarez, Leo':'G1','Hale, Owen':'D/'},
+ '9/21':{'Delgado, Sam':'T','Iqbal, Zara':'T','Lopez, Mateo':'T','Jones, Eli':'G2','Moreno, Ava':'G2','Brooks, Jonah (A)':'TT/','Farah, Idris':'A'},
+};
+const NOTES_BY_DAY={
+ '9/16':[{t:'Treatment prep',m:30},{t:'Checked and corresponded to emails',m:30},{t:'Travel to PS2',m:15},{t:'Edplan documentation for 6 students',m:45},{t:'Cleaned and sanitized treatment space',m:30},{t:'Progress reports',m:60},{t:'Treatment planning',m:30}],
+ '9/17':[{t:'Treatment prep',m:30},{t:'Checked and corresponded to emails',m:30},{t:'Consulted with OTP-JM on shared students',m:30},{t:'Progress reports',m:60},{t:'Travel to PS2',m:15},{t:'Cleaned and sanitized treatment space',m:30}],
+ '9/18':[{t:'Treatment prep',m:30},{t:'Checked and corresponded to emails',m:30},{t:'Edplan documentation for 8 students',m:45},{t:'Treatment planning',m:60}],
+ '9/21':[{t:'Treatment prep',m:30},{t:'Checked and corresponded to emails',m:30},{t:'Travel to PS2',m:15},{t:'Cleaned and sanitized treatment space',m:30},{t:'Edplan documentation for 5 students',m:45}],
+ '9/22':[],
+};
+const PRIOR_COMMENTS={'Kim, Aria':'9/17: student absent','Brooks, Jonah (A)':'9/21: extra time for transition','Farah, Idris':'9/21: field trip'};
+const root=document.getElementById('P');
+const S={codes:{},comments:{},get notes(){return NOTES_BY_DAY['9/22'];},set notes(v){NOTES_BY_DAY['9/22']=v;},chartDay:null,favs:FAVS.map(x=>({...x,pin:false})),cur:null,q:'',filter:'all',favsOpen:true,pf:{text:'',m:30,editing:null},pm:null,holdTimer:null};
+root.innerHTML=`
+<div class="phone">
+  <div class="topbar"><div class="name">SMR<span class="period">Sep 16 to Sep 30</span></div><div class="saved"><i></i>Saved 2:41 PM</div></div>
+  <div class="tabs">
+    <button class="tab active" data-p="sessions">Sessions</button>
+    <button class="tab" data-p="notes">Notes<span class="badge" data-r="ncount">0</span></button>
+    <button class="tab" data-p="chart">Chart</button>
+    <button class="tab" data-p="review">Review<span class="badge" data-r="icount">0</span></button>
+  </div>
+  <div class="panel active" data-panel="sessions">
+    <div class="dates" data-r="dates"></div>
+    <div class="daybar" data-r="daybar"><div class="row"><div class="big" data-r="dtotal"></div><div class="left" data-r="dleft"></div></div><div class="bar"><i data-r="dbar"></i></div><div class="split"><span>Codes <b data-r="dcodes"></b></span><span>Notes <b data-r="dnotes"></b></span></div></div>
+    <div data-r="finish"></div>
+    <h4>Students <span data-r="scount"></span></h4>
+    <div class="search"><input type="text" id="q" placeholder="Search" autocomplete="off"><button data-filter="all" class="on">All</button><button data-filter="todo">Not yet</button><button data-filter="done">Coded</button></div>
+    <div class="list" data-r="roster"></div>
+  </div>
+  <div class="panel" data-panel="notes">
+    <h4>${DAY} <span data-r="ntotal"></span></h4>
+    <div class="favhead"><h4>Your usual activities <span data-r="favcount"></span></h4><button data-act="togglefavs" data-r="favtoggle">Hide</button></div>
+    <div class="favs" data-r="favs"></div>
+    <div class="pillform" data-r="pillform">
+      <input type="text" id="pf-text" placeholder="Activity, e.g. Edplan documentation for 8 students">
+      <div class="r"><span style="font-size:12px;color:var(--dim)">Usual time</span><div class="mins"><button data-pf="-15">−</button><output data-r="pf-mins">30m</output><button data-pf="15">+</button></div><button class="cancel" data-act="pfcancel">Cancel</button><button class="save" data-act="pfsave">Save pill</button></div>
+      <div class="hint">Saved pills carry across periods. Tap one to add it to today; hold to edit or remove.</div>
+    </div>
+    <div class="pillmenu" data-r="pillmenu">
+      <div style="font-size:12px"><b data-r="pm-name"></b></div>
+      <div class="r"><button data-act="pmedit">Edit</button><button data-act="pmpin">Pin to front</button><button data-act="pmremove" class="danger">Remove pill</button><button data-act="pmclose">Close</button></div>
+    </div>
+    <h4>Today's activities <span data-r="ncountlabel"></span></h4>
+    <div class="list" data-r="notes"></div>
+    <button class="collapse" data-act="addnote">+ Add a one-off activity</button>
+  </div>
+  <div class="panel" data-panel="chart" style="overflow:hidden"><div class="chartwrap" data-r="chart"></div></div>
+  <div class="panel" data-panel="review">
+    <h4>Before export</h4>
+    <div class="list" data-r="issues"></div>
+    <div class="export"><button class="p" data-r="export">Export for filler</button><button class="s">Save backup to Files</button></div>
+    <h4>This period</h4>
+    <div class="settings"><div><b>Daily minimum</b><span>6:30</span></div><div><b>Ceiling</b><span>9:00</span></div><div><b>Reminder if under minimum</b><span>3:30 PM</span></div></div>
+  </div>
+</div>
+<div class="sheet nsheet" data-r="nsheet"><div class="card"><h5 data-r="ns-title"></h5><div class="tot"><span>Codes <b data-r="ns-codes"></b> + Notes <b data-r="ns-notes"></b></span><span>Total <b data-r="ns-total"></b></span></div><div class="fitrow" data-r="ns-pills"></div><div class="list" data-r="ns-list" style="padding:0"></div><button class="collapse" data-act="nsadd" style="margin:6px 0 0;width:100%">+ Add a one-off activity</button><div class="row2"><button style="background:var(--accent);color:#fff" data-act="nsdone">Done</button></div></div></div>
+<div class="sheet" data-r="sheet"><div class="card"><h5 data-r="shname"></h5><div class="grid" data-r="shgrid"></div><textarea data-r="shcomment" placeholder="Comment for today (needed for A, O, H and extra time)"></textarea><div class="row2"><button style="background:var(--bg);color:var(--text)" data-act="shcancel">Cancel</button><button style="background:var(--accent);color:#fff" data-act="shdone">Done</button></div></div></div>`;
+const R=k=>root.querySelector(`[data-r="${k}"]`);
+
+function codeMinsOf(map){ let t=0; const seen=new Set();
+  for(const n in map){ for(const k of tok(map[n])){ if(STAT.has(k.code))continue; if(GRP.has(k.code)){ if(seen.has(k.code))continue; seen.add(k.code);} t+=k.half?15:30; } } return t; }
+function codeMins(){ let t=0; const seen=new Set();
+  for(const n in S.codes){ for(const k of tok(S.codes[n])){ if(STAT.has(k.code))continue; if(GRP.has(k.code)){ if(seen.has(k.code))continue; seen.add(k.code);} t+=k.half?15:30; } } return t; }
+const noteMins=()=>S.notes.reduce((a,x)=>a+(x.m||0),0);
+
+function row(r){ const c=S.codes[r.n]||''; const has=!!c; const sug=r.f.includes('Gp')?'G1':'T';
+  return `<div class="stu ${has?'done':''}"><div class="who"><div class="n">${r.n}</div><div class="f">${r.f} · ${r.s}${S.comments[r.n]?' · '+S.comments[r.n]:''}</div></div>`+
+   (has?`<button class="code ${cls(c)}" data-open="${r.n}">${c}</button>`:
+   `<div class="acts"><button class="seen" data-quick="${r.n}" data-code="${sug}">${sug}</button><button class="abs" data-quick="${r.n}" data-code="A">A</button><button class="more" data-open="${r.n}">…</button></div>`)+`</div>`; }
+
+function render(){
+  R('dates').innerHTML=[['Mon','9/21','ok'],['Tue','9/22','on'],['Wed','9/23',''],['Thu','9/24',''],['Fri','9/25','']].map(x=>`<button class="chip ${x[2]}"><small>${x[0]}</small>${x[1]}</button>`).join('');
+  const cm=codeMins(), nm=noteMins(), tot=cm+nm, left=MIN-tot;
+  R('dtotal').innerHTML=hm(tot)+' <span>of '+hm(MIN)+'</span>'; R('dcodes').textContent=hm(cm); R('dnotes').textContent=hm(nm);
+  R('daybar').className='daybar'+(tot>CEIL?' over':tot>=MIN?' ok':'');
+  R('dleft').textContent= tot>CEIL?'Over 9:00': tot>=MIN?'Day covered':hm(left)+' to go';
+  R('dbar').style.width=Math.min(100,tot/MIN*100)+'%';
+  const f=R('finish');
+  if(tot>CEIL){ f.innerHTML=`<div class="finish over"><div class="gap"><em>${hm(tot)}</em> logged, over 9:00</div><div class="sub">Usually a code counted twice or a note with the wrong minutes. Check the Review tab.</div></div>`; }
+  else if(tot>=MIN){ f.innerHTML=`<div class="finish done"><div class="gap">Day covered. <em>${hm(tot)}</em> logged.</div><div class="sub">Anything else you did today can still be added on the Notes tab.</div></div>`; }
+  else { const singles=S.favs.filter(x=>x.m<=left).sort((a,b)=>(a.m===left?-1:b.m===left?1:0)||b.c-a.c);
+    const combos=[]; for(let i=0;i<S.favs.length;i++)for(let j=i+1;j<S.favs.length;j++){ if(S.favs[i].m+S.favs[j].m===left) combos.push([i,j]); }
+    let h=`<div class="finish"><div class="gap"><em>${hm(left)}</em> to reach 6:30</div><div class="sub">${hm(tot)} logged. Tap what you did; adjust minutes after.</div><div class="fit">`;
+    singles.slice(0,5).forEach(x=>{ h+=`<button data-fav="${S.favs.indexOf(x)}" class="${x.m===left?'exact':''}">${x.t}<b>${x.m}m</b></button>`; });
+    combos.slice(0,2).forEach(c=>{ h+=`<button class="combo exact" data-combo="${c[0]},${c[1]}">${S.favs[c[0]].t} + ${S.favs[c[1]].t}<b>${S.favs[c[0]].m+S.favs[c[1]].m}m</b></button>`; });
+    h+=`</div><div class="foot">Green closes the gap exactly. Nothing is added until you tap it.</div></div>`; f.innerHTML=h; }
+  const q=S.q.toLowerCase();
+  const vis=roster.filter(r=>r.n.toLowerCase().includes(q)).filter(r=>S.filter==='all'||(S.filter==='done')===!!S.codes[r.n]);
+  R('scount').textContent=Object.keys(S.codes).length+' of '+roster.length+' coded';
+  R('roster').innerHTML=vis.map(row).join('')||'<div class="note" style="padding:6px 4px">No students match.</div>';
+  root.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('on',b.dataset.filter===S.filter));
+  R('ncount').textContent=S.notes.length; R('ntotal').textContent=hm(nm);
+  const ordered=S.favs.map((x,i)=>({x,i})).sort((a,b)=>(b.x.pin-a.x.pin)||(b.x.c-a.x.c));
+  R('favs').innerHTML=ordered.map(({x,i})=>`<button data-fav="${i}" class="${x.pin?'pin':''}">${x.t}<b>${x.m}m</b></button>`).join('')+`<button class="addpill" data-act="pfopen">+ New pill</button>`;
+  R('favs').classList.toggle('collapsed',!S.favsOpen); R('favtoggle').textContent=S.favsOpen?'Hide':'Show'; R('favcount').textContent=S.favs.length+' pills';
+  R('ncountlabel').textContent=S.notes.length? S.notes.length+' items':'';
+  R('pf-mins').textContent=S.pf.m+'m';
+  R('notes').innerHTML=S.notes.map((x,i)=>`<div class="noteitem"><input type="text" value="${x.t.replace(/"/g,'&quot;')}" data-i="${i}"><div class="mins"><button data-i="${i}" data-d="-15">−</button><output>${x.m}m</output><button data-i="${i}" data-d="15">+</button></div><button class="x" data-del="${i}">×</button></div>`).join('') || '<div class="note" style="padding:6px 4px">No activities yet today.</div>';
+  const issues=[];
+  if(tot<MIN) issues.push(['red',DAY+' is '+hm(MIN-tot)+' under 6:30','Add today\'s activities on the Notes tab']);
+  if(tot>CEIL) issues.push(['red',DAY+' is over 9:00','Check for a code counted twice']);
+  if(tot%15) issues.push(['amber',DAY+' total is not on a 15 minute boundary',hm(tot)+' logged']);
+  for(const n in S.codes){ const ks=tok(S.codes[n]); const m=ks.filter(k=>!STAT.has(k.code)).reduce((a,k)=>a+(k.half?15:30),0); const ln=n.split(',')[0];
+    if(ks.some(k=>k.bad)) issues.push(['amber',ln+': double slash in '+S.codes[n],'Use a single slash; billed as 15']);
+    if(/\/[A-Z]/.test(S.codes[n].toUpperCase())) issues.push(['amber',ln+': confirm '+S.codes[n],'Slash halves only the code before it']);
+    if(m>30&&!S.comments[n]) issues.push(['amber',ln+': '+S.codes[n]+' has extra time and no comment','Donna will ask why']);
+    if(ks.some(k=>STAT.has(k.code))&&!S.comments[n]) issues.push(['amber',ln+': '+S.codes[n]+' without a reason','Add a dated comment']); }
+  renderChart(cm,nm);
+  const red=issues.some(x=>x[0]==='red');
+  const ic=R('icount'); ic.textContent=issues.length||'✓'; ic.className='badge'+(issues.length?'':' ok');
+  R('issues').innerHTML= issues.length? issues.map(x=>`<div class="issue ${x[0]}"><div><div class="t">${x[1]}</div><div class="d">${x[2]}</div></div><div class="go">›</div></div>`).join('') : `<div class="issue ok"><div><div class="t">Nothing to fix</div><div class="d">Every day is at or above 6:30 and every code reads cleanly.</div></div></div>`;
+  R('export').disabled=red; R('export').textContent=red?'Fix the red items to export':'Export for filler';
+}
+function renderChart(cmToday,nmToday){
+  const days=DATES.map((d,i)=>({d,i,wk:d[0]==='Sat'||d[0]==='Sun'})).filter(x=>!x.wk);
+  let h='<table class="ct"><thead><tr><th class="nm">Student</th>'+days.map(x=>`<th class="${x.i===TODAY_I?'today':''}"><span class="cd">${x.d[0]}</span>${x.d[1]}</th>`).join('')+'<th>Comments</th></tr></thead><tbody>';
+  roster.forEach(r=>{
+    h+=`<tr><td class="nm">${r.n}</td>`;
+    days.forEach(x=>{ const map=x.i===TODAY_I?S.codes:(PRIOR[x.d[1]]||{}); const c=map[r.n]||''; const k=c?cls(c):'';
+      h+=`<td class="cell ${x.i===TODAY_I?'today':''} ${k?'c-'+k:''}" ${x.i===TODAY_I?`data-open="${r.n}"`:''}>${c}</td>`; });
+    const cm=[PRIOR_COMMENTS[r.n],S.comments[r.n]].filter(Boolean).join('; ');
+    h+=`<td class="cmt" title="${cm}">${cm}</td></tr>`; });
+  const codesRow=days.map(x=>x.i===TODAY_I?cmToday:codeMinsOf(PRIOR[x.d[1]]||{}));
+  const dayNotes=d=>(NOTES_BY_DAY[d]||[]).reduce((a,x)=>a+(x.m||0),0);
+  const notesRow=days.map(x=>dayNotes(x.d[1]));
+  const fmt=m=>m?hm(m):'';
+  h+='<tr class="tot"><td class="nm">Codes</td>'+codesRow.map(m=>`<td>${fmt(m)}</td>`).join('')+'<td></td></tr>';
+  h+='<tr class="tot"><td class="nm">Notes</td>'+days.map((x,j)=>`<td class="notecell" data-noteday="${x.d[1]}">${fmt(notesRow[j])||'+'}</td>`).join('')+'<td></td></tr>';
+  h+='<tr class="tot grand"><td class="nm">Total</td>'+days.map((x,j)=>{ const t=codesRow[j]+notesRow[j]; const future=x.i>TODAY_I; const st=future?'':t>CEIL?'over':t>=MIN?'ok':(t>0||x.i===TODAY_I?'short':''); return `<td class="${st}">${fmt(t)}</td>`; }).join('')+'<td></td></tr>';
+  h+='</tbody></table>';
+  R('chart').innerHTML=h;
+}
+function renderNoteSheet(){ const d=S.chartDay; if(!d)return; const list=NOTES_BY_DAY[d]||(NOTES_BY_DAY[d]=[]);
+  const cm=d==='9/22'?codeMins():codeMinsOf(PRIOR[d]||{}); const nm=list.reduce((a,x)=>a+(x.m||0),0); const t=cm+nm;
+  const label=DATES.find(x=>x[1]===d); R('ns-title').textContent='Notes for '+label[0]+' '+d; R('ns-codes').textContent=hm(cm); R('ns-notes').textContent=hm(nm);
+  const tb=R('ns-total'); tb.textContent=hm(t)+' of 6:30'; tb.className=t>=MIN?'ok':'short';
+  const ordered=S.favs.map((x,i)=>({x,i})).sort((a,b)=>(b.x.pin-a.x.pin)||(b.x.c-a.x.c));
+  R('ns-pills').innerHTML=ordered.map(({x,i})=>`<button data-nsfav="${i}">${x.t}<b>${x.m}m</b></button>`).join('');
+  R('ns-list').innerHTML=list.map((x,i)=>`<div class="noteitem"><input type="text" value="${x.t.replace(/"/g,'&quot;')}" data-nsi="${i}"><div class="mins"><button data-nsi="${i}" data-nsd="-15">−</button><output>${x.m}m</output><button data-nsi="${i}" data-nsd="15">+</button></div><button class="x" data-nsdel="${i}">×</button></div>`).join('')||'<div class="note" style="padding:4px 0">Nothing logged for this day yet.</div>';
+}
+function openNoteSheet(d){ S.chartDay=d; renderNoteSheet(); R('nsheet').classList.add('open'); }
+function openSheet(name){ S.cur=name; R('shname').textContent=name+' · '+DAY; R('shname').dataset.code=S.codes[name]||'';
+  const opts=[['T','Therapy'],['G1','Group 1'],['G2','Group 2'],['I','Integrated'],['M','Makeup'],['T/','Half'],['TT/','T + half'],['C','Consult'],['D','Document'],['R','Record rev'],['S','Schedule'],['A','Absent'],['A(M)','Makeup miss'],['O','Ther unavail'],['H','School closed'],['clear','Clear']];
+  R('shgrid').innerHTML=opts.map(o=>`<button data-k="${o[0]}" style="border-color:${(S.codes[name]||'')===o[0]?'var(--accent)':'var(--border)'}">${o[0]}<small>${o[1]}</small></button>`).join('');
+  R('shcomment').value=(S.comments[name]||'').replace(/^9\/22: /,''); R('sheet').classList.add('open'); }
+root.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t)return; const d=t.dataset;
+  if(d.p){ root.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t)); root.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.dataset.panel===d.p)); }
+  if(d.filter){ S.filter=d.filter; render(); }
+  if(d.quick){ S.codes[d.quick]=d.code; if(d.code==='A')openSheet(d.quick); render(); }
+  if(d.open){ openSheet(d.open); }
+  if(d.fav!==undefined&&!t.closest('.sheet')){ if(S.held){S.held=false;return;} const f=S.favs[+d.fav]; S.notes.push({t:f.t,m:f.m}); f.c++; render(); }
+  if(d.noteday){ openNoteSheet(d.noteday); }
+  if(d.nsfav!==undefined){ const f=S.favs[+d.nsfav]; NOTES_BY_DAY[S.chartDay].push({t:f.t,m:f.m}); f.c++; renderNoteSheet(); render(); }
+  if(d.nsd){ const n=NOTES_BY_DAY[S.chartDay][+d.nsi]; n.m=Math.max(0,n.m+ +d.nsd); renderNoteSheet(); render(); }
+  if(d.nsdel){ NOTES_BY_DAY[S.chartDay].splice(+d.nsdel,1); renderNoteSheet(); render(); }
+  if(d.act==='nsadd'){ NOTES_BY_DAY[S.chartDay].push({t:'',m:15}); renderNoteSheet(); render(); }
+  if(d.act==='nsdone'){ R('nsheet').classList.remove('open'); render(); }
+  if(d.act==='togglefavs'){ S.favsOpen=!S.favsOpen; render(); }
+  if(d.act==='pfopen'){ S.pf={text:'',m:30,editing:null}; R('pillform').classList.add('open'); R('pillmenu').classList.remove('open'); document.getElementById('pf-text').value=''; render(); setTimeout(()=>document.getElementById('pf-text').focus(),30); }
+  if(d.act==='pfcancel'){ R('pillform').classList.remove('open'); }
+  if(d.pf){ S.pf.m=Math.max(15,S.pf.m+ +d.pf); render(); }
+  if(d.act==='pfsave'){ const txt=document.getElementById('pf-text').value.trim(); if(!txt)return; if(S.pf.editing!==null){ Object.assign(S.favs[S.pf.editing],{t:txt,m:S.pf.m}); } else { S.favs.push({t:txt,m:S.pf.m,c:0,pin:false}); } R('pillform').classList.remove('open'); render(); }
+  if(d.act==='pmclose'){ R('pillmenu').classList.remove('open'); S.pm=null; }
+  if(d.act==='pmpin'){ S.favs[S.pm].pin=!S.favs[S.pm].pin; R('pillmenu').classList.remove('open'); render(); }
+  if(d.act==='pmremove'){ S.favs.splice(S.pm,1); S.pm=null; R('pillmenu').classList.remove('open'); render(); }
+  if(d.act==='pmedit'){ const f=S.favs[S.pm]; S.pf={text:f.t,m:f.m,editing:S.pm}; document.getElementById('pf-text').value=f.t; R('pillmenu').classList.remove('open'); R('pillform').classList.add('open'); render(); }
+  if(d.combo){ d.combo.split(',').forEach(i=>{const f=S.favs[+i]; S.notes.push({t:f.t,m:f.m}); f.c++;}); render(); }
+  if(d.d){ const n=S.notes[+d.i]; n.m=Math.max(0,n.m+ +d.d); render(); }
+  if(d.del){ S.notes.splice(+d.del,1); render(); }
+  if(d.act==='addnote'){ S.notes.push({t:'',m:15}); render(); }
+  if(d.k){ R('shname').dataset.code=d.k; root.querySelectorAll('[data-r="shgrid"] button').forEach(b=>b.style.borderColor=b===t?'var(--accent)':'var(--border)'); }
+  if(d.act==='shcancel'){ R('sheet').classList.remove('open'); }
+  if(d.act==='shdone'){ const c=R('shname').dataset.code; if(c==='clear')delete S.codes[S.cur]; else if(c)S.codes[S.cur]=c; const cm=R('shcomment').value.trim(); if(cm)S.comments[S.cur]='9/22: '+cm; else delete S.comments[S.cur]; R('sheet').classList.remove('open'); render(); }
+});
+function startHold(e){ const t=e.target.closest('[data-fav]'); if(!t||t.closest('.sheet'))return; S.holdTimer=setTimeout(()=>{ S.held=true; S.pm=+t.dataset.fav; R('pm-name').textContent=S.favs[S.pm].t+' · '+S.favs[S.pm].m+'m'; R('pillmenu').classList.add('open'); R('pillform').classList.remove('open'); },450); }
+function endHold(){ clearTimeout(S.holdTimer); }
+root.addEventListener('pointerdown',startHold); root.addEventListener('pointerup',endHold); root.addEventListener('pointercancel',endHold); root.addEventListener('pointerleave',endHold);
+root.addEventListener('contextmenu',e=>{ if(e.target.closest('[data-fav]')) e.preventDefault(); });
+root.addEventListener('input',e=>{ if(e.target.id==='q'){ S.q=e.target.value; render(); }
+  else if(e.target.dataset.nsi!==undefined&&e.target.type==='text'){ NOTES_BY_DAY[S.chartDay][+e.target.dataset.nsi].t=e.target.value; }
+  else if(e.target.dataset.i!==undefined&&e.target.type==='text'){ S.notes[+e.target.dataset.i].t=e.target.value; } });
+function scen(k){ S.codes={};S.comments={};S.notes=[]; NOTES_BY_DAY['9/16']=NOTES_BY_DAY['9/16']; 
+  if(k>=1){ S.codes={'Alvarez, Mia':'T','Alvarez, Leo':'G1','Castro, Nia':'G1','Farah, Idris':'G1','Brooks, Jonah (A)':'T','Delgado, Sam':'TT/','Grant, Lily':'A','Jones, Eli':'G2','Kim, Aria':'G2','Hale, Owen':'C/','Nash, Theo':'T','Ortega, Luna':'T'};
+    S.comments={'Grant, Lily':'9/22: student absent','Delgado, Sam':'9/22: additional time to transition back to class'};
+    S.notes=[{t:'Treatment prep',m:30},{t:'Checked and corresponded to emails',m:30},{t:'Consulted with OTP-JM on shared students',m:30}]; }
+  if(k===2) S.notes.push({t:'Cleaned and sanitized treatment space',m:30},{t:'Edplan documentation for 9 students',m:45});
+  if(k===3) S.notes.push({t:'Progress reports',m:240},{t:'Treatment planning',m:60});
+  render(); }
+document.querySelectorAll('[data-scen]').forEach(b=>b.addEventListener('click',()=>scen(+b.dataset.scen)));
+scen(1);
+})();
+</script>
+
+</body>
+</html>
