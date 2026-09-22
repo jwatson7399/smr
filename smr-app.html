@@ -120,12 +120,28 @@ body {
 
 .nav-bar {
   display: flex;
+  flex-direction: column;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 0.25rem;
-  gap: 0.25rem;
+  padding: 0.25rem 0.25rem 0.15rem;
+  gap: 0.1rem;
   flex-shrink: 0;
 }
+
+.nav-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.save-state {
+  font-size: 0.68rem;
+  text-align: right;
+  padding: 0.1rem 0.45rem 0.2rem;
+  color: var(--text-dim);
+  min-height: 1rem;
+}
+
+.save-state.bad { color: var(--red); }
 
 .nav-tab {
   flex: 1;
@@ -1046,12 +1062,12 @@ body {
 <!-- ════ Upload Screen ════ -->
 <div id="upload-screen">
   <h1>SMR Entry</h1>
-  <p>Upload your .xlsm spreadsheet to load the student roster and billing period dates.</p>
+  <p>Upload your .xlsm spreadsheet to load the student roster and billing period dates. A .json backup restores a saved period.</p>
   <div class="upload-zone" id="upload-zone">
     <div class="icon">📋</div>
-    <div class="label">Tap to select .xlsm file</div>
+    <div class="label">Tap to select .xlsm or .json</div>
   </div>
-  <input type="file" id="file-input" accept=".xlsm,.xlsx">
+  <input type="file" id="file-input" accept=".xlsm,.xlsx,.json">
   <div class="upload-info" id="upload-info">
     <div class="filename" id="upload-filename"></div>
     <div class="details" id="upload-details"></div>
@@ -1062,11 +1078,14 @@ body {
 <!-- ════ App Screen ════ -->
 <div id="app-screen">
   <nav class="nav-bar">
-    <button class="nav-tab active" data-panel="sessions">Sessions<span class="badge" id="session-count">0</span></button>
-    <button class="nav-tab" data-panel="comments">Comments<span class="badge" id="comment-count">0</span></button>
-    <button class="nav-tab" data-panel="notes">Notes</button>
-    <button class="nav-tab" data-panel="chart">Chart</button>
-    <button class="nav-tab" data-panel="export">Summary</button>
+    <div class="nav-tabs">
+      <button class="nav-tab active" data-panel="sessions">Sessions<span class="badge" id="session-count">0</span></button>
+      <button class="nav-tab" data-panel="comments">Comments<span class="badge" id="comment-count">0</span></button>
+      <button class="nav-tab" data-panel="notes">Notes</button>
+      <button class="nav-tab" data-panel="chart">Chart</button>
+      <button class="nav-tab" data-panel="export">Summary</button>
+    </div>
+    <div id="save-state" class="save-state" aria-live="polite"></div>
   </nav>
 
   <div class="panels">
@@ -1319,6 +1338,17 @@ function isWeekend(d) {
 // ══════════════════════════════════════════════
 // LOCAL STORAGE
 // ══════════════════════════════════════════════
+let lastReportedSaveError = null;
+
+function setSaveState(ok, detail) {
+  const el = document.getElementById('save-state');
+  if (!el) return;
+  const now = new Date();
+  const time = now.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+  el.classList.toggle('bad', !ok);
+  el.textContent = ok ? `Saved ${time}` : `Not saved. ${detail || 'Could not save'}`;
+}
+
 function saveToStorage() {
   try {
     const toSave = {
@@ -1330,7 +1360,132 @@ function saveToStorage() {
       notes: appData.notes,
     };
     localStorage.setItem('smr_data', JSON.stringify(toSave));
-  } catch(e) { /* silent */ }
+    lastReportedSaveError = null;
+    setSaveState(true);
+    return true;
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : 'Could not save';
+    if (lastReportedSaveError !== msg) {
+      lastReportedSaveError = msg;
+      setSaveState(false, msg);
+    }
+    return false;
+  }
+}
+
+function periodBounds(dates) {
+  const valid = (dates || []).filter(d => d instanceof Date && !isNaN(d.getTime()));
+  if (!valid.length) return null;
+  const sorted = [...valid].sort((a, b) => a - b);
+  return {start: fmtDateKey(sorted[0]), end: fmtDateKey(sorted[sorted.length - 1])};
+}
+
+function boundsFromRecord(rec) {
+  if (!rec || typeof rec !== 'object') return null;
+  if (rec.periodStart && rec.periodEnd) return {start: String(rec.periodStart), end: String(rec.periodEnd)};
+  if (!Array.isArray(rec.dates) || !rec.dates.length) return null;
+  return periodBounds(rec.dates.map(s => new Date(s)));
+}
+
+function currentPeriodBounds() {
+  if (appData.students.length && appData.dates.length) return periodBounds(appData.dates);
+  try {
+    const raw = localStorage.getItem('smr_data');
+    if (!raw) return null;
+    return boundsFromRecord(JSON.parse(raw));
+  } catch (e) {
+    return null;
+  }
+}
+
+function buildBackupFromApp() {
+  const bounds = periodBounds(appData.dates) || {start: 'unknown', end: 'unknown'};
+  return {
+    schemaVersion: 1,
+    filename: appData.filename,
+    periodStart: bounds.start,
+    periodEnd: bounds.end,
+    students: appData.students,
+    dates: appData.dates.map(d => d.toISOString()),
+    sessions: appData.sessions,
+    comments: appData.comments,
+    notes: appData.notes,
+    exportedAt: new Date().toISOString(),
+  };
+}
+
+function buildBackupFromStored(rec) {
+  const bounds = boundsFromRecord(rec) || {start: 'unknown', end: 'unknown'};
+  return {
+    schemaVersion: 1,
+    filename: rec.filename || '',
+    periodStart: bounds.start,
+    periodEnd: bounds.end,
+    students: rec.students || [],
+    dates: rec.dates || [],
+    sessions: rec.sessions || {},
+    comments: rec.comments || [],
+    notes: rec.notes || {},
+    exportedAt: new Date().toISOString(),
+  };
+}
+
+function downloadBackup(obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `smr-backup-${obj.periodStart}-${obj.periodEnd}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function backupError(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return 'Backup is not a JSON object';
+  if (obj.schemaVersion !== 1) return 'Backup schema is not version 1';
+  if (!Array.isArray(obj.students) || obj.students.length === 0) return 'Backup has no students';
+  if (!Array.isArray(obj.dates) || obj.dates.length === 0) return 'Backup has no dates';
+  if (obj.dates.some(s => isNaN(new Date(s).getTime()))) return 'Backup has a date that cannot be read';
+  return null;
+}
+
+function applyBackup(obj) {
+  appData.filename = obj.filename || '';
+  appData.students = obj.students;
+  appData.dates = obj.dates.map(s => new Date(s));
+  appData.sessions = obj.sessions && typeof obj.sessions === 'object' ? obj.sessions : {};
+  appData.comments = Array.isArray(obj.comments) ? obj.comments : [];
+  appData.notes = obj.notes && typeof obj.notes === 'object' ? obj.notes : {};
+  appData.selectedDate = null;
+  saveToStorage();
+  showApp();
+}
+
+function storedPeriodRecord() {
+  try {
+    const raw = localStorage.getItem('smr_data');
+    if (!raw) return null;
+    const rec = JSON.parse(raw);
+    if (!rec || !Array.isArray(rec.students) || rec.students.length === 0) return null;
+    if (!Array.isArray(rec.dates) || rec.dates.length === 0) return null;
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+
+function offerBackupBeforeReplace() {
+  const rec = storedPeriodRecord();
+  if (!rec) return true;
+  const bounds = boundsFromRecord(rec);
+  const label = bounds ? `${bounds.start} to ${bounds.end}` : 'the saved period';
+  if (confirm(`A period is already saved (${label}). Download a backup before replacing it?`)) {
+    downloadBackup(buildBackupFromStored(rec));
+    return true;
+  }
+  return confirm('Replace the saved period without a backup?');
 }
 
 function loadFromStorage() {
@@ -1354,6 +1509,8 @@ function showApp() {
   renderCommentSelects();
   renderNotes();
   updateCounts();
+  const saveEl = document.getElementById('save-state');
+  if (saveEl && !saveEl.textContent) setSaveState(true);
 }
 
 function renderDateSelector() {
@@ -2087,6 +2244,7 @@ function renderExport() {
     <div class="summary-section export-actions">
       <h3>Export</h3>
       <button class="export-btn primary" id="export-txt-btn">Download .txt File</button>
+      <button class="export-btn secondary" id="export-backup-btn">Download backup</button>
       <button class="export-btn secondary" id="export-copy-btn">Copy to Clipboard</button>
       <button class="toggle-preview-btn" id="toggle-preview-btn">Show .txt preview</button>
       <div class="export-text-preview" id="export-preview-text" style="display:none">${escHtml(txt)}</div>
@@ -2098,6 +2256,7 @@ function renderExport() {
 
   // ── Wire events ──
   document.getElementById('export-txt-btn').onclick = () => downloadTxt(txt);
+  document.getElementById('export-backup-btn').onclick = () => downloadBackup(buildBackupFromApp());
   document.getElementById('export-copy-btn').onclick = () => {
     navigator.clipboard.writeText(txt).then(() => {
       const btn = document.getElementById('export-copy-btn');
@@ -2485,11 +2644,43 @@ document.addEventListener('DOMContentLoaded', () => {
   buildCodeButtons();
 });
 
+function handleBackupFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let obj;
+    try {
+      obj = JSON.parse(reader.result);
+    } catch (e) {
+      alert('Backup is not valid JSON');
+      return;
+    }
+    const err = backupError(obj);
+    if (err) {
+      alert(err);
+      return;
+    }
+    const current = currentPeriodBounds();
+    const incoming = boundsFromRecord(obj);
+    if (current && incoming && (current.start !== incoming.start || current.end !== incoming.end)) {
+      const ok = confirm(`Replace the loaded period ${current.start} to ${current.end} with ${incoming.start} to ${incoming.end}?`);
+      if (!ok) return;
+    }
+    applyBackup(obj);
+  };
+  reader.readAsText(file);
+}
+
 function handleFile(file) {
-  if (!file.name.match(/\.xlsx?m?$/i)) {
-    alert('Please select an .xlsm or .xlsx file');
+  const fileName = file.name || '';
+  if (/\.json$/i.test(fileName)) {
+    handleBackupFile(file);
     return;
   }
+  if (!fileName.match(/\.xlsx?m?$/i)) {
+    alert('Please select an .xlsm, .xlsx, or .json backup');
+    return;
+  }
+  if (!offerBackupBeforeReplace()) return;
 
   const reader = new FileReader();
   reader.onload = (e) => {
