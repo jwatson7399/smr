@@ -255,6 +255,41 @@ body {
 .daybar .split { display: flex; gap: 0.75rem; margin-top: 0.35rem; font-size: 0.7rem; color: var(--text-dim); }
 .daybar .split b { color: var(--text); font-weight: 600; }
 
+.finish {
+  margin: 0.55rem 0.6rem 0.2rem;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(233,69,96,.12), rgba(233,69,96,.04));
+  border: 1px solid rgba(233,69,96,.45);
+  padding: 0.75rem;
+}
+.finish .gap { font-weight: 800; font-size: 0.95rem; }
+.finish .gap em { font-style: normal; color: var(--accent); }
+.finish .sub { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.15rem; }
+.finish .fit { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+.finish .fit button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  text-align: left;
+}
+.finish .fit button b { font-weight: 800; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.finish .fit button.exact { border-color: var(--green); background: rgba(0,184,148,.12); }
+.finish .fit button.exact b { color: var(--green); }
+.finish .fit button.combo { border-style: dashed; }
+.finish .foot { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.45rem; }
+.finish.done { border-color: rgba(0,184,148,.5); background: linear-gradient(180deg, rgba(0,184,148,.14), rgba(0,184,148,.03)); }
+.finish.done .gap em { color: var(--green); }
+.finish.over { border-color: rgba(253,203,110,.5); background: linear-gradient(180deg, rgba(253,203,110,.14), rgba(253,203,110,.03)); }
+.finish.over .gap em { color: var(--yellow); }
+
 .session-head {
   margin: 0.55rem 0.75rem 0.25rem;
   font-size: 0.7rem;
@@ -1616,6 +1651,8 @@ function loadFromStorage() {
 // ══════════════════════════════════════════════
 // UI RENDERING
 // ══════════════════════════════════════════════
+const ACTIVITIES_KEY = 'smr_activities';
+let activities = [];
 let sessionQuery = '';
 let sessionFilter = 'all';
 let commentSheetStudent = null;
@@ -1652,6 +1689,87 @@ function renderPeriodBar() {
   if (el) el.textContent = periodLabel();
 }
 
+function loadActivities() {
+  try {
+    const raw = localStorage.getItem(ACTIVITIES_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return [];
+    return list.filter(a => a && typeof a.text === 'string' && a.text.trim()).map(a => ({
+      text: a.text.trim(),
+      defaultMinutes: Math.max(15, Math.round((Number(a.defaultMinutes) || 15) / 15) * 15),
+      count: Number(a.count) || 0,
+      lastUsed: a.lastUsed || '',
+      pinned: !!a.pinned,
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveActivities() {
+  localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(activities));
+}
+
+function addNoteFromActivity(date, activity) {
+  const key = fmtDate(date);
+  if (!appData.notes[key]) appData.notes[key] = [];
+  appData.notes[key].push({activity: activity.text, time: activity.defaultMinutes + ' min'});
+  activity.count = (activity.count || 0) + 1;
+  activity.lastUsed = new Date().toISOString();
+  saveActivities();
+  saveToStorage();
+  renderDateSelector();
+  renderDayTotal();
+  if (document.getElementById('panel-notes').classList.contains('active')) renderNotes();
+}
+
+function renderFinish() {
+  const slot = document.getElementById('finish-slot');
+  const date = appData.dates[appData.selectedDate];
+  if (!slot || !date) return;
+  const parts = dayParts(date);
+  const min = dailyMinimumMinutes();
+  const ceil = dailyCeilingMinutes();
+  if (parts.total > ceil) {
+    slot.innerHTML = `<div class="finish over"><div class="gap"><em>${fmtClock(parts.total)}</em> logged, over ${fmtClock(ceil)}</div><div class="sub">Usually a code counted twice or a note with the wrong minutes. Check the Review tab.</div></div>`;
+    return;
+  }
+  if (parts.total >= min) {
+    slot.innerHTML = `<div class="finish done"><div class="gap">Day covered. <em>${fmtClock(parts.total)}</em> logged.</div><div class="sub">Anything else you did today can still be added on the Notes tab.</div></div>`;
+    return;
+  }
+  const left = min - parts.total;
+  const singles = activities
+    .map((a, i) => ({a, i}))
+    .filter(x => x.a.defaultMinutes <= left)
+    .sort((a, b) => (a.a.defaultMinutes === left ? -1 : b.a.defaultMinutes === left ? 1 : 0) || (b.a.count - a.a.count));
+  const combos = [];
+  for (let i = 0; i < activities.length; i++) {
+    for (let j = i + 1; j < activities.length; j++) {
+      if (activities[i].defaultMinutes + activities[j].defaultMinutes === left) combos.push([i, j]);
+    }
+  }
+  let html = `<div class="finish"><div class="gap"><em>${fmtClock(left)}</em> to reach ${fmtClock(min)}</div><div class="sub">${fmtClock(parts.total)} logged. Tap what you did; adjust minutes after.</div><div class="fit">`;
+  singles.slice(0, 5).forEach(x => {
+    html += `<button type="button" data-finish="${x.i}" class="${x.a.defaultMinutes === left ? 'exact' : ''}">${escHtml(x.a.text)}<b>${x.a.defaultMinutes}m</b></button>`;
+  });
+  combos.slice(0, 2).forEach(pair => {
+    const a = activities[pair[0]];
+    const b = activities[pair[1]];
+    html += `<button type="button" class="combo exact" data-finish-combo="${pair[0]},${pair[1]}">${escHtml(a.text)} + ${escHtml(b.text)}<b>${a.defaultMinutes + b.defaultMinutes}m</b></button>`;
+  });
+  html += `</div><div class="foot">Green closes the gap exactly. Nothing is added until you tap it.</div></div>`;
+  slot.innerHTML = html;
+  slot.querySelectorAll('[data-finish]').forEach(btn => {
+    btn.onclick = () => addNoteFromActivity(date, activities[parseInt(btn.dataset.finish, 10)]);
+  });
+  slot.querySelectorAll('[data-finish-combo]').forEach(btn => {
+    btn.onclick = () => {
+      btn.dataset.finishCombo.split(',').forEach(i => addNoteFromActivity(date, activities[parseInt(i, 10)]));
+    };
+  });
+}
+
 function renderDayTotal() {
   const card = document.getElementById('day-total');
   const date = appData.dates[appData.selectedDate];
@@ -1667,6 +1785,7 @@ function renderDayTotal() {
   document.getElementById('day-total-bar').style.width = Math.min(100, parts.total / min * 100) + '%';
   document.getElementById('day-total-codes').textContent = fmtClock(parts.codes);
   document.getElementById('day-total-notes').textContent = fmtClock(parts.notes);
+  renderFinish();
 }
 
 function showApp() {
@@ -3007,6 +3126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'comment-sheet') closeCommentSheet();
   };
 
+  activities = loadActivities();
   buildCodeButtons();
 });
 
