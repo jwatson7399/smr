@@ -2543,8 +2543,8 @@ function greedyTokens(token) {
 }
 
 function tokenizeCode(compound) {
-  // Same cases as the filler: a slash between two known codes halves both
-  // (R/C). Otherwise a slash halves only the code it follows (TT/C = T + T/ + C).
+  // A slash halves only the code immediately before it (entry 028).
+  // R/C = R/ + C = 45. TT/C = T + T/ + C = 75.
   // // is not valid: bill as half and flag it. A(M) is one status code, not A plus M.
   const tokens = [];
   const parts = (compound || '').trim().toUpperCase().split(/\s+/).filter(Boolean);
@@ -2567,13 +2567,6 @@ function tokenizeCode(compound) {
     if (token.endsWith('/') && isKnownCode(token.slice(0, -1))) {
       tokens.push({code: token.slice(0, -1), modifier: '/'});
       continue;
-    }
-    if (token.includes('/') && !token.startsWith('/')) {
-      const slashParts = token.split('/').filter(Boolean);
-      if (slashParts.length >= 2 && slashParts.every(isKnownCode)) {
-        slashParts.forEach(code => tokens.push({code, modifier: '/'}));
-        continue;
-      }
     }
     if (token.startsWith('/') && isKnownCode(token.slice(1))) {
       tokens.push({code: token.slice(1), modifier: '/'});

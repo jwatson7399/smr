@@ -28,6 +28,7 @@
 
 # --- 3/5 ---
 3/5, Alvarez Mia, CC/
+# R/C = R/ 15 + C 30 = 45. A slash does not halve the following code.
 3/5, Alvarez Leo, R/C
 3/5, Brooks Jonah (A), D//
 
@@ -42,13 +43,13 @@
 3/9, Brooks Jonah (B), A(M)
 
 # --- 3/10 ---
-# TT/C = 75, D/CC/ = 60, G1C = 60. Codes 195.
+# TT/C = T 30 + T/ 15 + C 30 = 75. D/CC/ = D/ 15 + C 30 + C/ 15 = 60. G1C = 60. Codes 195.
 3/10, Alvarez Mia, TT/C
 3/10, Alvarez Leo, D/CC/
 3/10, Chen Priya, G1C
 
 # --- 3/11 ---
-# MM/ = 45, C/DD = 75, MDD = 90. Codes 210.
+# MM/ = 45. C/DD = C/ 15 + D 30 + D 30 = 75. MDD = 90. Codes 210.
 3/11, Alvarez Mia, MM/
 3/11, Alvarez Leo, C/DD
 3/11, Chen Priya, MDD

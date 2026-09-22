@@ -7,7 +7,7 @@ M2 and M3 dedup once per day. A(M) is 0. // bills as 15.
 3/2 codes: T 30 + G1 once 30 + T/ 15 + TT/ (30+15) 45 = 120. Note (30 min) = 30. Total 150.
 3/3 codes: TD (30+30) 60 + G2 once 30 + G1/ 15 + A 0 + A1 0 = 105. Note (1hr) = 60. Total 165.
 3/4 codes: A2 0 + O 0 + H 0 + S 30 + S/ 15 + C 30 = 75. Note (1hr 15 min) = 75. Total 150.
-3/5 codes: CC/ (30+15) 45 + R/C (15+15) 30 + D// billed as 15 = 90. Note (45 mins) = 45. Total 135.
+3/5 codes: CC/ (30+15) 45 + R/C (15+30) 45 + D// billed as 15 = 105. Note (45 mins) = 45. Total 150.
 3/6 codes: plain T for the student whose column C is 45 min = 30. No note. Total 30.
 3/9 codes: M2 once 30 + M3 once 30 + A(M) 0 = 60. Total 60.
 3/10 codes: TT/C (30+15+30) 75 + D/CC/ (15+30+15) 60 + G1C (30+30) 60 = 195. Total 195.
@@ -36,7 +36,7 @@ EXPECTED = {
     "3/2": 150,
     "3/3": 165,
     "3/4": 150,
-    "3/5": 135,
+    "3/5": 150,
     "3/6": 30,
     "3/9": 60,
     "3/10": 195,
@@ -48,7 +48,7 @@ EXPECTED_CODES = {
     "3/2": 120,
     "3/3": 105,
     "3/4": 75,
-    "3/5": 90,
+    "3/5": 105,
     "3/6": 30,
     "3/9": 60,
     "3/10": 195,
@@ -168,7 +168,8 @@ console.log(JSON.stringify({codes: out, rc, dbl, ttc, am, notes, imported}));
 
 def main():
     totals, warnings, sessions = filler_totals()
-    assert smr_filler.parse_code_cell("R/C") == [("R", 0.5), ("C", 0.5)]
+    assert smr_filler.parse_code_cell("R/C") == [("R", 0.5), ("C", 1.0)]
+    assert smr_filler.parse_code_cell("C/I") == [("C", 0.5), ("I", 1.0)]
     assert smr_filler.parse_code_cell("D//") == [("D", 0.25)]
     assert smr_filler.parse_code_cell("A1") == [("A1", 1.0)]
     assert smr_filler.parse_code_cell("TT/") == [("T", 1.0), ("T", 0.5)]
@@ -194,7 +195,7 @@ def main():
     app = app_code_totals(sessions)
     for key, expected in EXPECTED_CODES.items():
         assert app["codes"][key] == expected, (key, app["codes"][key], expected)
-    assert app["rc"][0]["modifier"] == "/" and app["rc"][1]["modifier"] == "/"
+    assert app["rc"][0]["modifier"] == "/" and app["rc"][1]["modifier"] is None
     assert app["dbl"][0]["invalid"] == "//"
     assert app["dbl"][0]["modifier"] == "/"
     assert [tok["code"] for tok in app["ttc"]] == ["T", "T", "C"]

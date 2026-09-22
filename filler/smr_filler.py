@@ -9,7 +9,7 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
-VERSION = "2026-09-21-b"  # full session is 30; M2/M3 dedup; A(M) is status
+VERSION = "2026-09-22-a"  # a slash halves only the code immediately before it
 
 import re
 import sys
@@ -311,10 +311,7 @@ def parse_code_cell(cell_value):
 
         # Handle token that is just "/" — modifier for the previous code
         if token == "/":
-            # This is a standalone slash — means previous code is half
-            # and next code (if any) is also half
-            # e.g. "C /T" tokenizes as ["C", "/T"] but
-            #      "C / T" tokenizes as ["C", "/", "T"]
+            # A slash halves only the code immediately before it (entry 028).
             if results:
                 # Change last result to half
                 code, mod = results[-1]
@@ -336,23 +333,10 @@ def parse_code_cell(cell_value):
             continue
 
         if token.endswith("/") and token[:-1].upper() in KNOWN_CODES:
-            code = token[:-1].upper()
-            # Check if next token starts with a code (mixed half: "T/G1")
-            # Actually "T/" is just half T. "T/G1" is a single token.
-            results.append((code, 0.5))
+            # "T/" is half of that code only. "R/C" is not this case.
+            results.append((token[:-1].upper(), 0.5))
             i += 1
             continue
-
-        # Check for slash in middle: "T/G1" — mixed half session
-        if "/" in token and not token.startswith("/"):
-            slash_parts = token.split("/")
-            # Filter empties from trailing slashes
-            slash_parts = [p for p in slash_parts if p]
-            if all(p.upper() in KNOWN_CODES for p in slash_parts):
-                for p in slash_parts:
-                    results.append((p.upper(), 0.5))
-                i += 1
-                continue
 
         # Check for leading slash: "/T" means the code is half
         if token.startswith("/") and token[1:].upper() in KNOWN_CODES:
