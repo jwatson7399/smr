@@ -1211,6 +1211,28 @@ body {
   color: var(--accent) !important;
   font-weight: 700;
 }
+.chart-col-selected { background: rgba(233,69,96,.08); }
+th.chart-col-selected { color: var(--text); box-shadow: inset 0 -3px 0 var(--accent); }
+.chart-note-tap { cursor: pointer; color: var(--text); }
+.chart-note-tap:active { background: var(--surface2); }
+.chart-grand-total td.ok { color: var(--green) !important; background: transparent; }
+.chart-grand-total td.over { color: var(--red) !important; }
+.chart-grand-total td.short {
+  color: #fff !important;
+  background: rgba(225,112,85,.35);
+  box-shadow: inset 0 0 0 1px var(--red), 0 0 10px rgba(225,112,85,.7);
+  animation: day-short-glow 1.6s ease-in-out infinite;
+}
+@keyframes day-short-glow {
+  0%, 100% { box-shadow: inset 0 0 0 1px var(--red), 0 0 6px rgba(225,112,85,.4); }
+  50% { box-shadow: inset 0 0 0 1px var(--red), 0 0 14px rgba(225,112,85,.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-grand-total td.short {
+    animation-name: none;
+    animation-duration: 0s;
+  }
+}
 
 .chart-table td.chart-comment-col {
   text-align: left;
@@ -1336,6 +1358,21 @@ body {
     <div class="code-grid" id="indirect-codes"></div>
     <div class="code-section-label">Modifiers</div>
     <div class="modifier-row" id="modifier-row"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="day-notes-sheet">
+  <div class="code-picker" style="max-height:88dvh;overflow-y:auto">
+    <div class="picker-header">
+      <div class="student-name" id="day-notes-title"></div>
+      <button class="clear-btn" id="day-notes-done" type="button">Done</button>
+    </div>
+    <div class="daybar" style="margin:0 0 0.5rem">
+      <div class="split"><span>Codes <b id="day-notes-codes"></b></span><span>Notes <b id="day-notes-notes"></b></span><span>Total <b id="day-notes-total"></b></span></div>
+    </div>
+    <div class="favs" id="day-notes-pills" style="padding:0 0 0.4rem"></div>
+    <div id="day-notes-list"></div>
+    <button type="button" class="one-off" id="day-notes-add">+ Add a one-off activity</button>
   </div>
 </div>
 
@@ -2707,6 +2744,56 @@ function renderExport() {
 }
 
 // ── Chart ──
+let chartNoteDate = null;
+
+function dayStart(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+function totalMark(date, total) {
+  const today = dayStart(new Date());
+  const when = dayStart(date);
+  if (when > today) return '';
+  if (total > dailyCeilingMinutes()) return 'over';
+  if (total >= dailyMinimumMinutes()) return 'ok';
+  if (total > 0) return 'short';
+  return '';
+}
+
+function renderDayNoteSheet() {
+  if (!chartNoteDate) return;
+  const key = fmtDate(chartNoteDate);
+  if (!appData.notes[key]) appData.notes[key] = [];
+  const list = appData.notes[key];
+  const parts = dayParts(chartNoteDate);
+  document.getElementById('day-notes-title').textContent = 'Notes for ' + dayName(chartNoteDate) + ' ' + key;
+  document.getElementById('day-notes-codes').textContent = fmtClock(parts.codes);
+  document.getElementById('day-notes-notes').textContent = fmtClock(parts.notes);
+  const totalEl = document.getElementById('day-notes-total');
+  totalEl.textContent = fmtClock(parts.total) + ' of ' + fmtClock(dailyMinimumMinutes());
+  totalEl.style.color = parts.total >= dailyMinimumMinutes() ? 'var(--green)' : 'var(--red)';
+  document.getElementById('day-notes-pills').innerHTML = orderedActivities().map(({a, i}) =>
+    `<button type="button" data-day-pill="${i}">${escHtml(a.text)}<b>${a.defaultMinutes}m</b></button>`
+  ).join('');
+  document.getElementById('day-notes-list').innerHTML = list.map((item, i) =>
+    `<div class="noteitem"><input type="text" value="${escHtml(item.activity || '')}" data-day-text="${i}"><div class="mins"><button type="button" data-day-step="${i}" data-delta="-15">−</button><output>${parseNoteMins(item.time)}m</output><button type="button" data-day-step="${i}" data-delta="15">+</button></div><button type="button" class="x" data-day-del="${i}">×</button></div>`
+  ).join('') || '<p class="notes-empty">Nothing logged for this day yet.</p>';
+}
+
+function openDayNoteSheet(date) {
+  chartNoteDate = date;
+  renderDayNoteSheet();
+  document.getElementById('day-notes-sheet').classList.add('open');
+}
+
+function closeDayNoteSheet() {
+  document.getElementById('day-notes-sheet').classList.remove('open');
+  chartNoteDate = null;
+  renderChart();
+  renderDayTotal();
+  if (document.getElementById('panel-notes').classList.contains('active')) renderNotes();
+}
+
 function renderChart() {
   const panel = document.getElementById('panel-chart');
 
@@ -2735,8 +2822,10 @@ function renderChart() {
   // Header
   let html = '<div class="chart-container"><table class="chart-table"><thead><tr>';
   html += '<th class="chart-name-col">Student</th>';
+  const selected = appData.dates[appData.selectedDate];
   visibleDates.forEach(d => {
-    html += `<th><span class="chart-day">${dayName(d)}</span>${d.getMonth()+1}/${d.getDate()}</th>`;
+    const on = selected && dayStart(d) === dayStart(selected) ? ' chart-col-selected' : '';
+    html += `<th class="${on.trim()}"><span class="chart-day">${dayName(d)}</span>${d.getMonth()+1}/${d.getDate()}</th>`;
   });
   html += '<th>Comments</th></tr></thead><tbody>';
 
@@ -2747,7 +2836,8 @@ function renderChart() {
     visibleDates.forEach((d, di) => {
       const code = appData.sessions[sessionKey(s.name, d)] || '';
       const colorCls = code ? ' chart-' + getCodeColorClass(code) : '';
-      html += `<td class="chart-code chart-cell-tap${colorCls}" data-si="${si}" data-di="${di}">${code ? escHtml(code) : ''}</td>`;
+      const on = selected && dayStart(d) === dayStart(selected);
+      html += `<td class="chart-code${on ? ' chart-cell-tap chart-col-selected' : ''}${colorCls}" ${on ? `data-si="${si}" data-di="${di}"` : ''}>${code ? escHtml(code) : ''}</td>`;
     });
     const cmt = commentMap[s.name] ? commentMap[s.name].join('; ') : '';
     html += `<td class="chart-comment-col" title="${escHtml(cmt)}">${escHtml(cmt)}</td>`;
@@ -2766,21 +2856,18 @@ function renderChart() {
 
   // Notes totals per date
   html += '<tr class="chart-total-row"><td class="chart-name-col chart-total-label">Notes</td>';
-  visibleDates.forEach(d => {
-    const dateKey = fmtDate(d);
-    const mins = dateTotalMins(dateKey);
-    html += `<td class="chart-total-cell">${mins ? fmtHrMin(mins) : ''}</td>`;
+  visibleDates.forEach((d, di) => {
+    const mins = dateTotalMins(fmtDate(d));
+    html += `<td class="chart-total-cell chart-note-tap" data-note-di="${di}">${mins ? fmtClock(mins) : '+'}</td>`;
   });
   html += '<td></td></tr>';
 
   // Combined total per date
   html += '<tr class="chart-total-row chart-grand-total"><td class="chart-name-col chart-total-label">Total</td>';
   visibleDates.forEach(d => {
-    const dt = calcDayCodeTotals(d);
-    const codeMins = dt.direct + dt.indirect;
-    const noteMins = dateTotalMins(fmtDate(d));
-    const total = codeMins + noteMins;
-    html += `<td class="chart-total-cell">${total ? fmtHrMin(total) : ''}</td>`;
+    const parts = dayParts(d);
+    const mark = totalMark(d, parts.total);
+    html += `<td class="chart-total-cell${mark ? ' ' + mark : ''}">${parts.total ? fmtClock(parts.total) : ''}</td>`;
   });
   html += '<td></td></tr>';
 
@@ -2794,6 +2881,9 @@ function renderChart() {
       const di = parseInt(cell.dataset.di);
       openCodePicker(students[si], visibleDates[di]);
     };
+  });
+  panel.querySelectorAll('.chart-note-tap').forEach(cell => {
+    cell.onclick = () => openDayNoteSheet(visibleDates[parseInt(cell.dataset.noteDi, 10)]);
   });
 }
 
@@ -3130,6 +3220,56 @@ document.addEventListener('DOMContentLoaded', () => {
       renderStudentList();
     };
   });
+  document.getElementById('day-notes-done').onclick = () => closeDayNoteSheet();
+  document.getElementById('day-notes-sheet').onclick = (e) => {
+    if (e.target.id === 'day-notes-sheet') closeDayNoteSheet();
+  };
+  document.getElementById('day-notes-sheet').addEventListener('click', (e) => {
+    if (!chartNoteDate) return;
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const key = fmtDate(chartNoteDate);
+    if (btn.dataset.dayPill !== undefined) {
+      addNoteFromActivity(chartNoteDate, activities[parseInt(btn.dataset.dayPill, 10)]);
+      renderDayNoteSheet();
+      renderChart();
+      return;
+    }
+    if (btn.dataset.dayStep !== undefined) {
+      const item = appData.notes[key][parseInt(btn.dataset.dayStep, 10)];
+      item.time = Math.max(0, parseNoteMins(item.time) + parseInt(btn.dataset.delta, 10)) + ' min';
+      saveToStorage();
+      renderDayNoteSheet();
+      renderDayTotal();
+      renderChart();
+      return;
+    }
+    if (btn.dataset.dayDel !== undefined) {
+      appData.notes[key].splice(parseInt(btn.dataset.dayDel, 10), 1);
+      saveToStorage();
+      renderDayNoteSheet();
+      renderDayTotal();
+      renderChart();
+    }
+  });
+  document.getElementById('day-notes-sheet').addEventListener('input', (e) => {
+    if (!chartNoteDate || e.target.dataset.dayText === undefined) return;
+    const list = appData.notes[fmtDate(chartNoteDate)];
+    const item = list[parseInt(e.target.dataset.dayText, 10)];
+    if (!item) return;
+    item.activity = e.target.value;
+    saveToStorage();
+  });
+  document.getElementById('day-notes-add').onclick = () => {
+    if (!chartNoteDate) return;
+    const key = fmtDate(chartNoteDate);
+    if (!appData.notes[key]) appData.notes[key] = [];
+    appData.notes[key].push({activity: '', time: '15 min'});
+    saveToStorage();
+    renderDayNoteSheet();
+    renderDayTotal();
+    renderChart();
+  };
   document.getElementById('comment-sheet-cancel').onclick = () => closeCommentSheet();
   document.getElementById('comment-sheet-save').onclick = () => saveCommentSheet();
   document.getElementById('comment-sheet').onclick = (e) => {
