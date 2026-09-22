@@ -1234,6 +1234,17 @@ th.chart-col-selected { color: var(--text); box-shadow: inset 0 -3px 0 var(--acc
   }
 }
 
+.issue { background: var(--surface); border-radius: 12px; padding: 0.55rem 0.65rem; display: flex; gap: 0.5rem; align-items: flex-start; border-left: 3px solid var(--yellow); margin: 0 0.6rem 0.35rem; cursor: pointer; }
+.issue.red { border-left-color: var(--red); }
+.issue.ok { border-left-color: var(--green); cursor: default; }
+.issue .t { font-weight: 600; font-size: 0.85rem; }
+.issue .d { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.1rem; }
+.issue .go { margin-left: auto; color: var(--text-dim); }
+.review-settings { margin: 0.6rem; padding: 0.65rem 0.75rem; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8rem; }
+.review-settings div { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+.review-settings input[type=time] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0.3rem; }
+.export-btn[disabled] { opacity: 0.45; cursor: default; }
+
 .chart-table td.chart-comment-col {
   text-align: left;
   font-size: 0.62rem;
@@ -1274,6 +1285,7 @@ th.chart-col-selected { color: var(--text); box-shadow: inset 0 -3px 0 var(--acc
       <button class="nav-tab" data-panel="comments">Comments<span class="badge" id="comment-count">0</span></button>
       <button class="nav-tab" data-panel="notes">Notes</button>
       <button class="nav-tab" data-panel="chart">Chart</button>
+      <button class="nav-tab" data-panel="review">Review<span class="badge" id="review-count">0</span></button>
       <button class="nav-tab" data-panel="export">Summary</button>
     </div>
     <div id="save-state" class="save-state" aria-live="polite"></div>
@@ -1316,6 +1328,8 @@ th.chart-col-selected { color: var(--text); box-shadow: inset 0 -3px 0 var(--acc
 
     <!-- Chart Panel -->
     <div class="panel" id="panel-chart"></div>
+
+    <div class="panel" id="panel-review"></div>
 
     <!-- Export Panel -->
     <div class="panel" id="panel-export">
@@ -1404,6 +1418,7 @@ let appData = {
   comments: [],       // [{student, date, text}]
   notes: {},          // { "2/17": [{activity, time}] }
   selectedDate: null,  // index into dates[]
+  settings: {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''},
 };
 
 const DIRECT_CODES = [
@@ -1575,6 +1590,7 @@ function saveToStorage() {
       sessions: appData.sessions,
       comments: appData.comments,
       notes: appData.notes,
+      settings: periodSettings(),
     };
     localStorage.setItem('smr_data', JSON.stringify(toSave));
     lastReportedSaveError = null;
@@ -1618,7 +1634,7 @@ function currentPeriodBounds() {
 function buildBackupFromApp() {
   const bounds = periodBounds(appData.dates) || {start: 'unknown', end: 'unknown'};
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     filename: appData.filename,
     periodStart: bounds.start,
     periodEnd: bounds.end,
@@ -1627,6 +1643,14 @@ function buildBackupFromApp() {
     sessions: appData.sessions,
     comments: appData.comments,
     notes: appData.notes,
+    settings: periodSettings(),
+    activities: activities.map(a => ({
+      text: a.text,
+      defaultMinutes: a.defaultMinutes,
+      count: a.count || 0,
+      lastUsed: a.lastUsed || '',
+      pinned: !!a.pinned,
+    })),
     exportedAt: new Date().toISOString(),
   };
 }
@@ -1634,7 +1658,7 @@ function buildBackupFromApp() {
 function buildBackupFromStored(rec) {
   const bounds = boundsFromRecord(rec) || {start: 'unknown', end: 'unknown'};
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     filename: rec.filename || '',
     periodStart: bounds.start,
     periodEnd: bounds.end,
@@ -1643,6 +1667,8 @@ function buildBackupFromStored(rec) {
     sessions: rec.sessions || {},
     comments: rec.comments || [],
     notes: rec.notes || {},
+    settings: rec.settings || {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''},
+    activities: Array.isArray(rec.activities) ? rec.activities : activities,
     exportedAt: new Date().toISOString(),
   };
 }
@@ -1661,7 +1687,7 @@ function downloadBackup(obj) {
 
 function backupError(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return 'Backup is not a JSON object';
-  if (obj.schemaVersion !== 1) return 'Backup schema is not version 1';
+  if (obj.schemaVersion !== 1 && obj.schemaVersion !== 2) return 'Backup schema is not version 1 or 2';
   if (!Array.isArray(obj.students) || obj.students.length === 0) return 'Backup has no students';
   if (!Array.isArray(obj.dates) || obj.dates.length === 0) return 'Backup has no dates';
   if (obj.dates.some(s => isNaN(new Date(s).getTime()))) return 'Backup has a date that cannot be read';
@@ -1675,6 +1701,25 @@ function applyBackup(obj) {
   appData.sessions = obj.sessions && typeof obj.sessions === 'object' ? obj.sessions : {};
   appData.comments = Array.isArray(obj.comments) ? obj.comments : [];
   appData.notes = obj.notes && typeof obj.notes === 'object' ? obj.notes : {};
+  if (obj.schemaVersion === 2 && obj.settings && typeof obj.settings === 'object') {
+    appData.settings = {
+      dailyMinimumMinutes: Number(obj.settings.dailyMinimumMinutes) || 390,
+      dailyCeilingMinutes: Number(obj.settings.dailyCeilingMinutes) || 540,
+      reminderTime: typeof obj.settings.reminderTime === 'string' ? obj.settings.reminderTime : '',
+    };
+  } else {
+    appData.settings = {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''};
+  }
+  if (obj.schemaVersion === 2 && Array.isArray(obj.activities)) {
+    activities = obj.activities.filter(a => a && a.text).map(a => ({
+      text: String(a.text).trim(),
+      defaultMinutes: Math.max(15, Math.round((Number(a.defaultMinutes) || 15) / 15) * 15),
+      count: Number(a.count) || 0,
+      lastUsed: a.lastUsed || '',
+      pinned: !!a.pinned,
+    }));
+    saveActivities();
+  }
   appData.selectedDate = null;
   saveToStorage();
   showApp();
@@ -1725,8 +1770,18 @@ let sessionFilter = 'all';
 let commentSheetStudent = null;
 let commentSheetDate = null;
 
-function dailyMinimumMinutes() { return 390; }
-function dailyCeilingMinutes() { return 540; }
+function periodSettings() {
+  const s = appData.settings || {};
+  const min = Number(s.dailyMinimumMinutes);
+  const ceil = Number(s.dailyCeilingMinutes);
+  return {
+    dailyMinimumMinutes: min > 0 ? min : 390,
+    dailyCeilingMinutes: ceil > 0 ? ceil : 540,
+    reminderTime: typeof s.reminderTime === 'string' ? s.reminderTime : '',
+  };
+}
+function dailyMinimumMinutes() { return periodSettings().dailyMinimumMinutes; }
+function dailyCeilingMinutes() { return periodSettings().dailyCeilingMinutes; }
 
 function fmtClock(mins) {
   const n = Math.max(0, Math.round(Number(mins) || 0));
@@ -2715,7 +2770,12 @@ function renderExport() {
   panel.innerHTML = overviewHtml + dailySectionHtml + studentSectionHtml + notSeenHtml + commentsHtml + exportHtml;
 
   // ── Wire events ──
-  document.getElementById('export-txt-btn').onclick = () => downloadTxt(txt);
+  const exportBlocked = collectIssues().some(i => i.level === 'red');
+  const txtBtn = document.getElementById('export-txt-btn');
+  txtBtn.disabled = exportBlocked;
+  txtBtn.textContent = exportBlocked ? 'Fix the red items to export' : 'Download .txt File';
+  document.getElementById('export-copy-btn').disabled = exportBlocked;
+  txtBtn.onclick = () => { if (!txtBtn.disabled) downloadTxt(txt); };
   document.getElementById('export-backup-btn').onclick = () => downloadBackup(buildBackupFromApp());
   document.getElementById('export-copy-btn').onclick = () => {
     navigator.clipboard.writeText(txt).then(() => {
@@ -3138,10 +3198,184 @@ function fmtHrMin(mins) {
 }
 
 // ── Counts ──
+function isClosedDay(date) {
+  const tokens = [];
+  appData.students.forEach(s => {
+    const code = appData.sessions[sessionKey(s.name, date)];
+    if (!code) return;
+    tokenizeCode(code).forEach(t => tokens.push(t.code));
+  });
+  if (!tokens.length) return false;
+  return tokens.every(c => c === 'H') || tokens.every(c => c === 'O');
+}
+
+function studentCodeMinutes(code) {
+  return tokenizeCode(code).reduce((sum, tok) => {
+    if (STATUS_CODE_SET.has(tok.code)) return sum;
+    return sum + modifierMinutes(tok.code, tok.modifier);
+  }, 0);
+}
+
+function commentOnDay(studentName, date) {
+  const label = fmtDate(date);
+  return appData.comments.some(c => c.student === studentName && c.date === label && c.text.trim());
+}
+
+function collectIssues() {
+  const issues = [];
+  const min = dailyMinimumMinutes();
+  const ceil = dailyCeilingMinutes();
+  const today = dayStart(new Date());
+  const periodKeys = new Set(appData.dates.map(fmtDateKey));
+  if (lastReportedSaveError) {
+    issues.push({level: 'red', title: 'The last save failed', detail: lastReportedSaveError, panel: 'sessions'});
+  }
+  appData.dates.forEach((d, dateIndex) => {
+    if (isWeekend(d)) return;
+    const parts = dayParts(d);
+    const label = dayName(d) + ' ' + fmtDate(d);
+    if (dayStart(d) <= today && !isClosedDay(d) && parts.total < min) {
+      issues.push({level: 'red', title: label + ' is ' + fmtClock(min - parts.total) + ' under ' + fmtClock(min), detail: 'Add activities on the Notes tab', dateIndex, panel: 'notes'});
+    }
+    if (parts.total > ceil) {
+      issues.push({level: 'red', title: label + ' is over ' + fmtClock(ceil), detail: 'Check for a code counted twice or a note with the wrong minutes', dateIndex, panel: 'sessions'});
+    }
+    if (parts.total % 15) {
+      issues.push({level: 'amber', title: label + ' total is not on a 15 minute boundary', detail: fmtClock(parts.total) + ' logged', dateIndex, panel: 'notes'});
+    }
+    (appData.notes[fmtDate(d)] || []).forEach(note => {
+      if ((note.activity || '').trim() && !parseNoteMins(note.time)) {
+        issues.push({level: 'amber', title: label + ': "' + note.activity.trim() + '" has no time', detail: 'Add minutes on the Notes tab', dateIndex, panel: 'notes'});
+      }
+    });
+    appData.students.forEach(s => {
+      const code = appData.sessions[sessionKey(s.name, d)];
+      if (!code) return;
+      const tokens = tokenizeCode(code);
+      if (tokens.some(t => t.invalid === '//')) {
+        issues.push({level: 'amber', title: s.name + ': double slash in ' + code, detail: 'Use a single slash. It is billed as 15.', dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+      }
+      if (tokens.some(t => !isKnownCode(t.code))) {
+        issues.push({level: 'amber', title: s.name + ': unknown code ' + code, detail: 'Open the picker and replace it', dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+      }
+      if (/\/[A-Za-z(]/.test(code)) {
+        issues.push({level: 'amber', title: s.name + ': confirm ' + code, detail: 'A slash halves only the code before it', dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+      }
+      if (studentCodeMinutes(code) > 30 && !commentOnDay(s.name, d)) {
+        issues.push({level: 'amber', title: s.name + ': ' + code + ' has extra time and no comment', detail: 'Add a comment dated ' + fmtDate(d), dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+      }
+      if (tokens.some(t => STATUS_CODE_SET.has(t.code)) && !commentOnDay(s.name, d)) {
+        issues.push({level: 'amber', title: s.name + ': ' + code + ' without a reason', detail: 'Add a comment dated ' + fmtDate(d), dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+      }
+    });
+  });
+  Object.keys(appData.sessions).forEach(key => {
+    if (!appData.sessions[key]) return;
+    const dateKey = key.split('|')[1];
+    if (dateKey && !periodKeys.has(dateKey)) {
+      issues.push({level: 'amber', title: 'Code on a date outside the period', detail: key, panel: 'sessions'});
+    }
+  });
+  return issues;
+}
+
+function renderReview() {
+  const panel = document.getElementById('panel-review');
+  if (!panel) return;
+  const issues = collectIssues();
+  const red = issues.some(i => i.level === 'red');
+  const settings = periodSettings();
+  const list = issues.length
+    ? issues.map((issue, i) => `<div class="issue ${issue.level}" data-issue="${i}"><div><div class="t">${escHtml(issue.title)}</div><div class="d">${escHtml(issue.detail)}</div></div><div class="go">›</div></div>`).join('')
+    : '<div class="issue ok"><div><div class="t">Nothing to fix</div><div class="d">Every working day is at or above the minimum and every code reads cleanly.</div></div></div>';
+  panel.innerHTML = `
+    <div class="session-head">Before export</div>
+    ${list}
+    <div class="summary-section export-actions" style="padding:0.6rem">
+      <button class="export-btn primary" id="review-export-btn" ${red ? 'disabled' : ''}>${red ? 'Fix the red items to export' : 'Export for filler'}</button>
+      <button class="export-btn secondary" id="review-backup-btn">Save backup</button>
+    </div>
+    <div class="session-head">This period</div>
+    <div class="review-settings">
+      <div><b>Daily minimum</b><div class="mins"><button type="button" data-setting="dailyMinimumMinutes" data-delta="-15">−</button><output>${fmtClock(settings.dailyMinimumMinutes)}</output><button type="button" data-setting="dailyMinimumMinutes" data-delta="15">+</button></div></div>
+      <div><b>Ceiling</b><div class="mins"><button type="button" data-setting="dailyCeilingMinutes" data-delta="-15">−</button><output>${fmtClock(settings.dailyCeilingMinutes)}</output><button type="button" data-setting="dailyCeilingMinutes" data-delta="15">+</button></div></div>
+      <div><b>Reminder if under minimum</b><input type="time" id="reminder-time" value="${escHtml(settings.reminderTime)}"></div>
+    </div>`;
+  panel.querySelectorAll('[data-issue]').forEach(row => {
+    row.onclick = () => openIssue(issues[parseInt(row.dataset.issue, 10)]);
+  });
+  const exportBtn = document.getElementById('review-export-btn');
+  exportBtn.onclick = () => { if (!exportBtn.disabled) downloadTxt(generateTxt()); };
+  document.getElementById('review-backup-btn').onclick = () => downloadBackup(buildBackupFromApp());
+  panel.querySelectorAll('[data-setting]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.setting;
+      const next = Math.max(15, periodSettings()[key] + parseInt(btn.dataset.delta, 10));
+      appData.settings = periodSettings();
+      appData.settings[key] = next;
+      saveToStorage();
+      renderDayTotal();
+      renderReview();
+      if (document.getElementById('panel-chart').classList.contains('active')) renderChart();
+    };
+  });
+  document.getElementById('reminder-time').onchange = (e) => {
+    appData.settings = periodSettings();
+    appData.settings.reminderTime = e.target.value;
+    saveToStorage();
+    armReminder();
+  };
+}
+
+function openIssue(issue) {
+  if (typeof issue.dateIndex === 'number') appData.selectedDate = issue.dateIndex;
+  const tab = document.querySelector('.nav-tab[data-panel="' + (issue.panel || 'sessions') + '"]');
+  if (tab) tab.click();
+  else {
+    renderDateSelector();
+    renderDayTotal();
+    renderStudentList();
+  }
+  if (issue.studentName && issue.dateObj) {
+    const student = appData.students.find(s => s.name === issue.studentName);
+    if (student) openCodePicker(student, issue.dateObj);
+  }
+}
+
+let reminderTimer = null;
+function armReminder() {
+  clearTimeout(reminderTimer);
+  const when = periodSettings().reminderTime;
+  if (!when || typeof Notification === 'undefined') return;
+  const parts = when.split(':').map(Number);
+  if (parts.length < 2 || parts.some(n => Number.isNaN(n))) return;
+  const now = new Date();
+  const fire = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parts[0], parts[1], 0, 0);
+  if (fire <= now) return;
+  const date = appData.dates[appData.selectedDate];
+  if (!date || dayStart(date) !== dayStart(now)) return;
+  if (dayParts(date).total >= dailyMinimumMinutes()) return;
+  if (Notification.permission === 'denied') return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().then(() => {}).catch(() => {});
+    return;
+  }
+  reminderTimer = setTimeout(() => {
+    try { new Notification('SMR', {body: 'This day is still under the minimum.'}); } catch (e) {}
+  }, fire - now);
+}
+
 function updateCounts() {
   const totalSessions = Object.values(appData.sessions).filter(v => v).length;
   document.getElementById('session-count').textContent = totalSessions;
   document.getElementById('comment-count').textContent = appData.comments.filter(c => c.text.trim()).length;
+  const review = document.getElementById('review-count');
+  if (review) {
+    const issues = collectIssues();
+    const red = issues.some(i => i.level === 'red');
+    review.textContent = issues.length ? String(issues.length) : '✓';
+    review.style.background = issues.length ? (red ? 'var(--red)' : 'var(--yellow)') : 'var(--green)';
+  }
 }
 
 // ── Helpers ──
@@ -3163,6 +3397,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tab.dataset.panel === 'comments') renderComments();
       if (tab.dataset.panel === 'notes') renderNotes();
       if (tab.dataset.panel === 'chart') renderChart();
+      if (tab.dataset.panel === 'review') renderReview();
       if (tab.dataset.panel === 'export') renderExport();
     };
   });
@@ -3339,6 +3574,7 @@ function handleFile(file) {
       appData.sessions = parsed.sessions || {};
       appData.comments = parsed.comments || [];
       appData.notes = parsed.notes || {};
+      appData.settings = {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''};
       learnActivitiesFromNotes(appData.notes);
       appData.selectedDate = null;
 
