@@ -9,7 +9,7 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
-VERSION = "2026-09-21-a"  # S follows the 30/15 rule, A1 is non-billable, // bills as half
+VERSION = "2026-09-21-b"  # full session is 30; M2/M3 dedup; A(M) is status
 
 import re
 import sys
@@ -29,12 +29,13 @@ DATE_COL_END = 22          # V (inclusive — but may be None)
 COMMENT_COL = 23           # W
 TOTAL_ROW = 101
 NOTES_ROW = 131
-KNOWN_CODES = {"T", "G1", "G2", "G3", "I", "M", "A", "A1", "A2", "O", "H", "Y", "S",
+KNOWN_CODES = {"T", "G1", "G2", "G3", "M2", "M3", "I", "M", "A", "A1", "A2", "A(M)", "O", "H", "Y", "S",
                "R", "D", "C"}
-NON_BILLABLE = {"A", "A1", "A2", "O", "H"}
-GROUP_CODES = {"G1", "G2", "G3"}
-# Slash length is fixed, not "base x ratio". A 45-min student with T/ bills 15.
-# // is not a valid code (roundtable entry 006). It bills as half, with a warning.
+NON_BILLABLE = {"A", "A1", "A2", "A(M)", "O", "H"}
+GROUP_CODES = {"G1", "G2", "G3", "M2", "M3"}
+# Full session is 30 for every student (roundtable entry 021). Column C is not read.
+# Slash length is fixed. // is not valid (entry 006): it bills as half, with a warning.
+FULL_SESSION_MINUTES = 30
 HALF_SESSION_MINUTES = 15
 
 # ---------------------------------------------------------------------------
@@ -389,14 +390,6 @@ def parse_code_cell(cell_value):
 # Duration Parsing
 # ---------------------------------------------------------------------------
 
-def parse_duration_minutes(duration_str):
-    """Parse '30 min' -> 30.  Returns int minutes."""
-    if not duration_str:
-        return 30  # default
-    m = re.search(r'(\d+)', str(duration_str))
-    return int(m.group(1)) if m else 30
-
-
 # Match any (...) group, then scan its contents for one-or-more duration
 # components. This lets "(1hr 15 min)" sum to 75 instead of being dropped.
 DURATION_PAREN_RE = re.compile(r'\(([^)]+)\)')
@@ -418,40 +411,53 @@ def _sum_parens_duration(content):
     return total
 
 
+def _is_range_line(line):
+    """A span such as '6/8-6/12 Consult week' is not one day."""
+    return re.match(r'^\s*\d{1,2}/\d{1,2}\s*-\s*\d{1,2}/\d{1,2}\b', line) is not None
+
+
+def _date_header(line):
+    """Return (month, day, rest) for 'm/d' or 'm/d:' . None for ranges and prose."""
+    if _is_range_line(line):
+        return None
+    match = re.match(r'^\s*(\d{1,2})/(\d{1,2})(?![-–—/\d])\s*:?\s*(.*)$', line)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), match.group(3)
+
+
 def parse_notes_durations(notes_text, month, day):
     """Extract total minutes from the notes section for a specific date.
 
-    Finds the date header (e.g. "10/1") and parses all (Xmin)/(Xhr) durations
-    from that date's section until the next date header or end of text.
-
-    Handles both formats:
-      - Filler format: date alone on a line, activities on the next line
-      - xlsm format:   "3/2: activities..." all on one line
-    Also handles compound durations inside parens, e.g. "(1hr 15 min)" -> 75.
+    Date headers are 'm/d' or 'm/d:' at the start of a line. Activities may
+    follow on that line or on later lines. Range lines are skipped and do not
+    belong to the previous day. "(1hr 15 min)" sums to 75.
     """
     if not notes_text:
         return 0
 
-    # Match "M/D" at start of line, NOT followed by a dash/digit (avoids "3/9-3/13")
-    date_pattern = re.compile(
-        rf'^\s*{month}/{day}(?![-–—/\d])\s*:?\s*', re.MULTILINE
-    )
-
-    # Find this date's section
-    match = date_pattern.search(notes_text)
-    if not match:
-        return 0
-
-    # Everything from after the date pattern to the next date header or end
-    remaining = notes_text[match.end():]
-    next_date = re.search(r'^\s*\d{1,2}/\d{1,2}(?![-–—/\d])', remaining, re.MULTILINE)
-    if next_date:
-        section = remaining[:next_date.start()]
-    else:
-        section = remaining
+    chunks = []
+    collecting = False
+    for line in notes_text.splitlines():
+        if _is_range_line(line):
+            if collecting:
+                break
+            continue
+        header = _date_header(line)
+        if header:
+            header_month, header_day, rest = header
+            if collecting:
+                break
+            if header_month == month and header_day == day:
+                collecting = True
+                if rest.strip():
+                    chunks.append(rest)
+            continue
+        if collecting:
+            chunks.append(line)
 
     total = 0
-    for paren in DURATION_PAREN_RE.finditer(section):
+    for paren in DURATION_PAREN_RE.finditer("\n".join(chunks)):
         total += _sum_parens_duration(paren.group(1))
 
     return total
@@ -588,17 +594,12 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
             if not codes:
                 continue
 
-            # Get student's base duration from col C
-            dur_str = ws_data.cell(row=row, column=3).value
-            base_minutes = parse_duration_minutes(dur_str)
-
             for code, modifier in codes:
                 u = code.upper()
                 if u in NON_BILLABLE:
                     continue
-                # 1.0 = full session, student's column C duration.
-                # 0.5 = half, fixed. 0.25 is a // and bills as half.
-                # Column C stays until the 45-minute question is answered.
+                # 1.0 = 30 min for every student. 0.5 = half, fixed.
+                # 0.25 is a // and bills as half. Column C is not used.
                 if modifier == 0.5:
                     minutes = HALF_SESSION_MINUTES
                 elif modifier == 0.25:
@@ -608,7 +609,7 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
                         f"billed as {HALF_SESSION_MINUTES} min"
                     )
                 else:
-                    minutes = base_minutes * modifier
+                    minutes = FULL_SESSION_MINUTES * modifier
                 if u in GROUP_CODES:
                     if u in seen_groups:
                         continue

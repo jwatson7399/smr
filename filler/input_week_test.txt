@@ -34,6 +34,31 @@
 # --- 3/6 ---
 3/6, Diaz Omar, T
 
+# --- 3/9 ---
+# M2 twice (once), M3 once, A(M) is 0. Codes 60.
+3/9, Alvarez Mia, M2
+3/9, Alvarez Leo, M2
+3/9, Brooks Jonah (A), M3
+3/9, Brooks Jonah (B), A(M)
+
+# --- 3/10 ---
+# TT/C = 75, D/CC/ = 60, G1C = 60. Codes 195.
+3/10, Alvarez Mia, TT/C
+3/10, Alvarez Leo, D/CC/
+3/10, Chen Priya, G1C
+
+# --- 3/11 ---
+# MM/ = 45, C/DD = 75, MDD = 90. Codes 210.
+3/11, Alvarez Mia, MM/
+3/11, Alvarez Leo, C/DD
+3/11, Chen Priya, MDD
+
+# --- 3/12 ---
+# Two G1 and one G1D: group once (30) plus D in full (30). Codes 60.
+3/12, Alvarez Mia, G1
+3/12, Alvarez Leo, G1
+3/12, Chen Priya, G1D
+
 ## Comments
 Alvarez Mia, 3/2: on time
 Chen Priya, 3/3: not in group
@@ -44,3 +69,4 @@ Brooks Jonah (A), 3/4: school closed
 3/3, Emails (1hr)
 3/4, Documentation (1hr 15 min)
 3/5, Clean up (45 mins)
+6/8-6/12, Consult week (30 min)

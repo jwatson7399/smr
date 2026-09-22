@@ -1178,12 +1178,15 @@ const DIRECT_CODES = [
   {code: 'G3', label: 'Group 3'},
   {code: 'I', label: 'Integrated'},
   {code: 'M', label: 'Makeup'},
+  {code: 'M2', label: 'Makeup G2'},
+  {code: 'M3', label: 'Makeup G3'},
   {code: 'Y', label: 'Tele'},
 ];
 
 const STATUS_CODES = [
   {code: 'A', label: 'Absent'},
   {code: 'A1', label: 'Absent G1'},
+  {code: 'A(M)', label: 'Absent mkup'},
   {code: 'A2', label: 'Absent Gp'},
   {code: 'O', label: 'Ther Unavail'},
   {code: 'H', label: 'School Close'},
@@ -1286,37 +1289,7 @@ function parseXlsm(data) {
       allNoteText += (allNoteText ? '\n' : '') + String(cell.v);
     }
   }
-  if (allNoteText) {
-    const lines = allNoteText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
-    const pushActivities = (dateKey, activitiesStr) => {
-      if (!notes[dateKey]) notes[dateKey] = [];
-      if (!activitiesStr) return;
-      const segments = activitiesStr.match(/[^(]+\([^)]+\)/g);
-      if (segments) {
-        for (const seg of segments) {
-          const tm = seg.match(/\(([^)]+)\)\s*$/);
-          const time = tm ? tm[1].trim() : '';
-          const activity = tm ? seg.replace(/\([^)]+\)\s*$/, '').trim() : seg.trim();
-          if (activity) notes[dateKey].push({activity, time});
-        }
-      } else {
-        notes[dateKey].push({activity: activitiesStr, time: ''});
-      }
-    };
-    // "2/17: activities" on one line, or the filler's date-only line with
-    // activities on the following line. Skip preamble that has no date.
-    let currentKey = null;
-    for (const line of lines) {
-      const dateLineMatch = line.match(/^(\d{1,2}\/\d{1,2})(?:\s*-\s*\d{1,2}\/\d{1,2})?:?\s*(.*)$/);
-      if (dateLineMatch) {
-        currentKey = dateLineMatch[1];
-        if (!notes[currentKey]) notes[currentKey] = [];
-        pushActivities(currentKey, dateLineMatch[2].trim());
-        continue;
-      }
-      if (currentKey) pushActivities(currentKey, line);
-    }
-  }
+  if (allNoteText) Object.assign(notes, parseNoteText(allNoteText));
 
   return {students, dates, sessions, comments, notes};
 }
@@ -1837,6 +1810,42 @@ function addComment() {
 
 // ── Notes ──
 const TIME_PRESETS = ['15 min', '30 min', '45 min', '1 hr', '1.5 hr', '2 hr'];
+
+function parseNoteText(allNoteText) {
+  const notes = {};
+  const pushActivities = (dateKey, activitiesStr) => {
+    if (!notes[dateKey]) notes[dateKey] = [];
+    if (!activitiesStr) return;
+    const segments = activitiesStr.match(/[^(]+\([^)]+\)/g);
+    if (segments) {
+      for (const seg of segments) {
+        const tm = seg.match(/\(([^)]+)\)\s*$/);
+        const time = tm ? tm[1].trim() : '';
+        const activity = tm ? seg.replace(/\([^)]+\)\s*$/, '').trim() : seg.trim();
+        if (activity) notes[dateKey].push({activity, time});
+      }
+    } else if (activitiesStr) {
+      notes[dateKey].push({activity: activitiesStr, time: ''});
+    }
+  };
+  const lines = String(allNoteText || '').split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  let currentKey = null;
+  for (const line of lines) {
+    if (/^\d{1,2}\/\d{1,2}\s*-\s*\d{1,2}\/\d{1,2}\b/.test(line)) {
+      currentKey = null;
+      continue;
+    }
+    const dateLineMatch = line.match(/^(\d{1,2}\/\d{1,2})(?!\s*[-/])\s*:?\s*(.*)$/);
+    if (dateLineMatch) {
+      currentKey = dateLineMatch[1];
+      if (!notes[currentKey]) notes[currentKey] = [];
+      pushActivities(currentKey, dateLineMatch[2].trim());
+      continue;
+    }
+    if (currentKey) pushActivities(currentKey, line);
+  }
+  return notes;
+}
 
 function parseNoteMins(timeStr) {
   if (!timeStr) return 0;
@@ -2476,56 +2485,110 @@ function downloadTxt(txt) {
 const RULES = {
   FULL: 30,
   HALF: 15,
-  STATUS: ['A', 'A1', 'A2', 'O', 'H'],
-  GROUP: ['G1', 'G2', 'G3'],
-  DIRECT: ['T', 'G1', 'G2', 'G3', 'I', 'M', 'Y'],
+  STATUS: ['A', 'A1', 'A2', 'A(M)', 'O', 'H'],
+  GROUP: ['G1', 'G2', 'G3', 'M2', 'M3'],
+  DIRECT: ['T', 'G1', 'G2', 'G3', 'M', 'M2', 'M3', 'I', 'Y'],
   INDIRECT: ['C', 'S', 'R', 'D'],
 };
-const MULTI_CODES = ['G1', 'G2', 'G3', 'A2', 'A1'];
+const MULTI_CODES = ['A(M)', 'G1', 'G2', 'G3', 'M2', 'M3', 'A1', 'A2'];
 const SINGLE_CODES = new Set('TGIMYACSRDHO'.split(''));
 const DIRECT_CODE_SET = new Set(RULES.DIRECT);
 const STATUS_CODE_SET = new Set(RULES.STATUS);
 const INDIRECT_CODE_SET = new Set(RULES.INDIRECT);
 const GROUP_CODE_SET = new Set(RULES.GROUP);
 
-function codeAt(s, i) {
-  for (const mc of MULTI_CODES) {
-    if (s.substring(i, i + mc.length) === mc) return mc;
+function isKnownCode(code) {
+  return MULTI_CODES.includes(code) || (code.length === 1 && SINGLE_CODES.has(code));
+}
+
+function knownCodesLongestFirst() {
+  const codes = MULTI_CODES.slice();
+  SINGLE_CODES.forEach(ch => codes.push(ch));
+  codes.sort((a, b) => b.length - a.length);
+  return codes;
+}
+
+function greedyTokens(token) {
+  const codes = knownCodesLongestFirst();
+  const out = [];
+  let i = 0;
+  while (i < token.length) {
+    let matched = null;
+    for (const code of codes) {
+      if (token.substring(i, i + code.length) === code) {
+        matched = code;
+        break;
+      }
+    }
+    if (!matched) return null;
+    let j = i + matched.length;
+    let modifier = null;
+    let invalid = null;
+    if (j < token.length && token[j] === '/') {
+      if (j + 1 < token.length && token[j + 1] === '/') {
+        modifier = '/';
+        invalid = '//';
+        j += 2;
+      } else {
+        modifier = '/';
+        j += 1;
+      }
+    }
+    const tok = {code: matched, modifier};
+    if (invalid) tok.invalid = invalid;
+    out.push(tok);
+    i = j;
   }
-  if (SINGLE_CODES.has(s[i])) return s[i];
-  return null;
+  return out.length ? out : null;
 }
 
 function tokenizeCode(compound) {
-  // modifier: null = full, '/' = half. A '//' is stored as half and flagged invalid.
+  // Same cases as the filler: a slash between two known codes halves both
+  // (R/C). Otherwise a slash halves only the code it follows (TT/C = T + T/ + C).
+  // // is not valid: bill as half and flag it. A(M) is one status code, not A plus M.
   const tokens = [];
-  const s = (compound || '').trim().toUpperCase();
-  let i = 0;
-  let halfNext = false;
-
-  while (i < s.length) {
-    if (s[i] === ' ') { i++; continue; }
-    const code = codeAt(s, i);
-    if (!code) { i++; continue; }
-    i += code.length;
-
-    let modifier = halfNext ? '/' : null;
-    let invalid = null;
-    halfNext = false;
-    if (i < s.length && s[i] === '/') {
-      if (i + 1 < s.length && s[i + 1] === '/') {
-        modifier = '/';
-        invalid = '//';
-        i += 2;
-      } else {
-        modifier = '/';
-        i += 1;
-        if (codeAt(s, i)) halfNext = true;
+  const parts = (compound || '').trim().toUpperCase().split(/\s+/).filter(Boolean);
+  for (const token of parts) {
+    if (token === '/') {
+      if (tokens.length) tokens[tokens.length - 1].modifier = '/';
+      continue;
+    }
+    if (token === '//') {
+      if (tokens.length) {
+        tokens[tokens.length - 1].modifier = '/';
+        tokens[tokens.length - 1].invalid = '//';
+      }
+      continue;
+    }
+    if (token.endsWith('//') && isKnownCode(token.slice(0, -2))) {
+      tokens.push({code: token.slice(0, -2), modifier: '/', invalid: '//'});
+      continue;
+    }
+    if (token.endsWith('/') && isKnownCode(token.slice(0, -1))) {
+      tokens.push({code: token.slice(0, -1), modifier: '/'});
+      continue;
+    }
+    if (token.includes('/') && !token.startsWith('/')) {
+      const slashParts = token.split('/').filter(Boolean);
+      if (slashParts.length >= 2 && slashParts.every(isKnownCode)) {
+        slashParts.forEach(code => tokens.push({code, modifier: '/'}));
+        continue;
       }
     }
-    const tok = {code, modifier};
-    if (invalid) tok.invalid = invalid;
-    tokens.push(tok);
+    if (token.startsWith('/') && isKnownCode(token.slice(1))) {
+      tokens.push({code: token.slice(1), modifier: '/'});
+      continue;
+    }
+    if (isKnownCode(token)) {
+      tokens.push({code: token, modifier: null});
+      continue;
+    }
+    const greedy = greedyTokens(token);
+    if (greedy) {
+      tokens.push(...greedy);
+      continue;
+    }
+    tokens.push({code: token, modifier: null});
   }
   return tokens;
 }
