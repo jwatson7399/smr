@@ -3042,7 +3042,7 @@ function generateTxt() {
   lines.push('');
   lines.push('## Sessions');
   lines.push('# Codes: T=therapy, G1/G2=group, A=absent, M=makeup, Y=tele, S=scheduling, C=consult, R=record review, D=documentation, I=integrated');
-  lines.push('# Modifiers: X/=half session, X X=double, X//=less than half, X/Y=mixed (half each)');
+  lines.push('# Modifiers: X/=half (15), XX or X X=two sessions, X/Y=X half plus Y full (R/C=45), X// is not valid (billed as X/)');
   lines.push('# For duplicate last names add the first name: Alvarez Mia, Alvarez Leo. ');
   lines.push('# A "# row N" line sends the next line to sheet row N. Keep it with its line.');
   lines.push('# Format like this: "date (m/d), student last name, code"');
