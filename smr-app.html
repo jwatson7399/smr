@@ -380,6 +380,9 @@ body {
 }
 
 .student-row.coded { border-color: var(--border); }
+.nmrow { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+.nmrow .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtag { flex: none; font-size: 0.6rem; font-weight: 700; padding: 0.05rem 0.3rem; border-radius: 6px; border: 1px solid var(--border); color: var(--text-dim); }
 .student-row .who { flex: 1; min-width: 0; }
 .student-row .who .n {
   font-size: 0.85rem;
@@ -1172,6 +1175,7 @@ body {
 }
 
 .chart-table thead th.chart-name-col { z-index: 3; }
+.chart-table td.chart-name-col .nmrow { max-width: 110px; }
 
 .chart-table td.chart-name-col { background: var(--bg); }
 
@@ -1240,6 +1244,7 @@ th.chart-col-selected { color: var(--text); box-shadow: inset 0 -3px 0 var(--acc
 .issue .t { font-weight: 600; font-size: 0.85rem; }
 .issue .d { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.1rem; }
 .issue .go { margin-left: auto; color: var(--text-dim); }
+.issue .issue-ok { margin-left: auto; border: 1px solid var(--green); color: var(--green); background: var(--bg); border-radius: 8px; font-size: 0.72rem; font-weight: 700; padding: 0.35rem 0.6rem; cursor: pointer; }
 .review-settings { margin: 0.6rem; padding: 0.65rem 0.75rem; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8rem; }
 .review-settings div { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
 .review-settings input[type=time] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0.3rem; }
@@ -1412,13 +1417,14 @@ th.chart-col-selected { color: var(--text); box-shadow: inset 0 -3px 0 var(--acc
 // ══════════════════════════════════════════════
 let appData = {
   filename: '',
-  students: [],       // [{name, freq, duration, district, site, type}]
+  students: [],       // [{name, row, freq, duration, district, site, type}]
   dates: [],          // [Date objects]
-  sessions: {},       // { "StudentName|2026-02-17": "T" }
-  comments: [],       // [{student, date, text}]
+  sessions: {},       // { "r12|2026-02-17": "T" }, keyed by sheet row
+  comments: [],       // [{student, row, date, text}]
   notes: {},          // { "2/17": [{activity, time}] }
   selectedDate: null,  // index into dates[]
   settings: {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''},
+  rowMoves: [],       // cells moved by migrateToRows, listed in Review to confirm
 };
 
 const DIRECT_CODES = [
@@ -1491,7 +1497,7 @@ function parseXlsm(data) {
     const site = ws[XLSX.utils.encode_cell({r, c: 4})]?.v || '';
     const type = ws[XLSX.utils.encode_cell({r, c: 5})]?.v || '';
 
-    students.push({name, freq: String(freq), duration: String(dur), district: String(dist), site: String(site), type: String(type)});
+    students.push({name, row: r + 1, freq: String(freq), duration: String(dur), district: String(dist), site: String(site), type: String(type)});
   }
 
   // Extract existing session codes from the grid (row 5+, col 6+)
@@ -1507,8 +1513,7 @@ function parseXlsm(data) {
       if (cell && cell.v != null && String(cell.v).trim()) {
         const dateObj = dates[c - 6];
         if (dateObj) {
-          const key = `${name}|${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,'0')}-${String(dateObj.getDate()).padStart(2,'0')}`;
-          sessions[key] = String(cell.v).trim();
+          sessions[sessionKey({row: r + 1}, dateObj)] = String(cell.v).trim();
         }
       }
     }
@@ -1524,7 +1529,7 @@ function parseXlsm(data) {
 
     const commentCell = ws[XLSX.utils.encode_cell({r, c: 22})];
     if (commentCell && commentCell.v != null && String(commentCell.v).trim()) {
-      comments.push({student: name, date: '', text: String(commentCell.v).trim()});
+      comments.push({student: name, row: r + 1, date: '', text: String(commentCell.v).trim()});
     }
   }
 
@@ -1555,8 +1560,76 @@ function fmtDateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-function sessionKey(studentName, date) {
-  return `${studentName}|${fmtDateKey(date)}`;
+// A roster row is its sheet row, not its name. One student can have two rows
+// with the same name, one Ind mandate and one Gp mandate (roundtable entry 048).
+function sessionKey(student, date) {
+  return `r${student.row}|${fmtDateKey(date)}`;
+}
+
+function mandateTag(student) {
+  const freq = student.freq || '';
+  if (/gp/i.test(freq)) return 'Gp';
+  if (/ind/i.test(freq)) return 'Ind';
+  return '';
+}
+
+function studentLabel(student) {
+  const tag = mandateTag(student);
+  return tag ? `${student.name} (${tag})` : student.name;
+}
+
+function nameWithTag(student) {
+  const tag = mandateTag(student);
+  return `<span class="nmrow"><span class="nm">${escHtml(student.name)}</span>${tag ? `<span class="mtag">${tag}</span>` : ''}</span>`;
+}
+
+function studentByRow(row) {
+  return appData.students.find(s => s.row === row);
+}
+
+// Records before schema 3 keyed codes and comments by name, and their students
+// carry no row. The row is 6 plus the list position: no workbook has a blank
+// name inside the roster (entry 049). A name on two rows had one shared code.
+// A cell with a group-type code goes to the Gp row, anything else to the Ind
+// row, and each move is listed in Review to confirm (entry 048).
+const GROUP_TYPE_CODES = new Set(['G1', 'G2', 'G3', 'M2', 'M3', 'A1', 'A2']);
+
+function migrateToRows(rec) {
+  const oldStudents = Array.isArray(rec.students) ? rec.students : [];
+  if (oldStudents.every(s => Number.isInteger(s.row))) return rec;
+  const students = oldStudents.map((s, i) => Number.isInteger(s.row) ? s : {...s, row: 6 + i});
+  const byName = {};
+  students.forEach(s => { (byName[s.name] = byName[s.name] || []).push(s); });
+  const pick = (rows, code) => {
+    const want = tokenizeCode(code).some(t => GROUP_TYPE_CODES.has(t.code)) ? 'Gp' : 'Ind';
+    return rows.find(s => mandateTag(s) === want) || rows[0];
+  };
+  const sessions = {};
+  const rowMoves = [];
+  Object.entries(rec.sessions || {}).forEach(([key, code]) => {
+    const bar = key.lastIndexOf('|');
+    const rows = byName[key.slice(0, bar)];
+    const dateKey = key.slice(bar + 1);
+    if (!rows) { sessions[key] = code; return; }
+    const target = rows.length === 1 ? rows[0] : pick(rows, code);
+    sessions[`r${target.row}|${dateKey}`] = code;
+    if (rows.length > 1 && code) rowMoves.push({row: target.row, dateKey, code});
+  });
+  const dateKeyFor = label => {
+    const d = (rec.dates || []).map(s => new Date(s)).find(d => fmtDate(d) === label);
+    return d ? fmtDateKey(d) : null;
+  };
+  const comments = (rec.comments || []).map(c => {
+    const rows = byName[c.student];
+    if (!rows) return c;
+    if (rows.length === 1) return {...c, row: rows[0].row};
+    const dateKey = c.date ? dateKeyFor(c.date) : null;
+    const coded = dateKey && rows.find(s => sessions[`r${s.row}|${dateKey}`]);
+    const target = coded || rows.find(s => mandateTag(s) === 'Ind') || rows[0];
+    rowMoves.push({row: target.row, dateKey: dateKey || '', comment: true});
+    return {...c, row: target.row};
+  });
+  return {...rec, students, sessions, comments, rowMoves};
 }
 
 function dayName(d) {
@@ -1584,6 +1657,7 @@ function setSaveState(ok, detail) {
 function saveToStorage() {
   try {
     const toSave = {
+      schemaVersion: 3,
       filename: appData.filename,
       students: appData.students,
       dates: appData.dates.map(d => d.toISOString()),
@@ -1591,6 +1665,7 @@ function saveToStorage() {
       comments: appData.comments,
       notes: appData.notes,
       settings: periodSettings(),
+      rowMoves: appData.rowMoves || [],
     };
     localStorage.setItem('smr_data', JSON.stringify(toSave));
     lastReportedSaveError = null;
@@ -1634,7 +1709,7 @@ function currentPeriodBounds() {
 function buildBackupFromApp() {
   const bounds = periodBounds(appData.dates) || {start: 'unknown', end: 'unknown'};
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     filename: appData.filename,
     periodStart: bounds.start,
     periodEnd: bounds.end,
@@ -1644,6 +1719,7 @@ function buildBackupFromApp() {
     comments: appData.comments,
     notes: appData.notes,
     settings: periodSettings(),
+    rowMoves: appData.rowMoves || [],
     activities: activities.map(a => ({
       text: a.text,
       defaultMinutes: a.defaultMinutes,
@@ -1655,10 +1731,11 @@ function buildBackupFromApp() {
   };
 }
 
-function buildBackupFromStored(rec) {
+function buildBackupFromStored(stored) {
+  const rec = migrateToRows(stored);
   const bounds = boundsFromRecord(rec) || {start: 'unknown', end: 'unknown'};
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     filename: rec.filename || '',
     periodStart: bounds.start,
     periodEnd: bounds.end,
@@ -1668,6 +1745,7 @@ function buildBackupFromStored(rec) {
     comments: rec.comments || [],
     notes: rec.notes || {},
     settings: rec.settings || {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''},
+    rowMoves: rec.rowMoves || [],
     activities: Array.isArray(rec.activities) ? rec.activities : activities,
     exportedAt: new Date().toISOString(),
   };
@@ -1687,21 +1765,24 @@ function downloadBackup(obj) {
 
 function backupError(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return 'Backup is not a JSON object';
-  if (obj.schemaVersion !== 1 && obj.schemaVersion !== 2) return 'Backup schema is not version 1 or 2';
+  if (![1, 2, 3].includes(obj.schemaVersion)) return 'Backup schema is not version 1, 2, or 3';
   if (!Array.isArray(obj.students) || obj.students.length === 0) return 'Backup has no students';
+  if (obj.schemaVersion === 3 && obj.students.some(s => !Number.isInteger(s.row))) return 'Backup has a student with no row';
   if (!Array.isArray(obj.dates) || obj.dates.length === 0) return 'Backup has no dates';
   if (obj.dates.some(s => isNaN(new Date(s).getTime()))) return 'Backup has a date that cannot be read';
   return null;
 }
 
-function applyBackup(obj) {
+function applyBackup(backup) {
+  const obj = migrateToRows(backup);
   appData.filename = obj.filename || '';
   appData.students = obj.students;
   appData.dates = obj.dates.map(s => new Date(s));
   appData.sessions = obj.sessions && typeof obj.sessions === 'object' ? obj.sessions : {};
   appData.comments = Array.isArray(obj.comments) ? obj.comments : [];
   appData.notes = obj.notes && typeof obj.notes === 'object' ? obj.notes : {};
-  if (obj.schemaVersion === 2 && obj.settings && typeof obj.settings === 'object') {
+  appData.rowMoves = Array.isArray(obj.rowMoves) ? obj.rowMoves : [];
+  if (obj.schemaVersion >= 2 && obj.settings && typeof obj.settings === 'object') {
     appData.settings = {
       dailyMinimumMinutes: Number(obj.settings.dailyMinimumMinutes) || 390,
       dailyCeilingMinutes: Number(obj.settings.dailyCeilingMinutes) || 540,
@@ -1710,7 +1791,7 @@ function applyBackup(obj) {
   } else {
     appData.settings = {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''};
   }
-  if (obj.schemaVersion === 2 && Array.isArray(obj.activities)) {
+  if (obj.schemaVersion >= 2 && Array.isArray(obj.activities)) {
     activities = obj.activities.filter(a => a && a.text).map(a => ({
       text: String(a.text).trim(),
       defaultMinutes: Math.max(15, Math.round((Number(a.defaultMinutes) || 15) / 15) * 15),
@@ -1754,7 +1835,7 @@ function loadFromStorage() {
   try {
     const raw = localStorage.getItem('smr_data');
     if (!raw) return null;
-    const d = JSON.parse(raw);
+    const d = migrateToRows(JSON.parse(raw));
     d.dates = d.dates.map(s => new Date(s));
     return d;
   } catch(e) { return null; }
@@ -1970,13 +2051,13 @@ function getCodeColorClass(code) {
   return 'code-other';
 }
 
-function commentFor(studentName, date) {
+function commentFor(student, date) {
   const label = fmtDate(date);
-  return appData.comments.find(c => c.student === studentName && c.date === label);
+  return appData.comments.find(c => c.row === student.row && c.date === label);
 }
 
 function setSessionCode(student, date, code) {
-  appData.sessions[sessionKey(student.name, date)] = code;
+  appData.sessions[sessionKey(student, date)] = code;
   saveToStorage();
   renderDateSelector();
   renderDayTotal();
@@ -1988,8 +2069,8 @@ function setSessionCode(student, date, code) {
 function openCommentSheet(student, date) {
   commentSheetStudent = student;
   commentSheetDate = date;
-  const existing = commentFor(student.name, date);
-  document.getElementById('comment-sheet-title').textContent = student.name + ' · ' + dayName(date) + ' ' + fmtDate(date);
+  const existing = commentFor(student, date);
+  document.getElementById('comment-sheet-title').textContent = studentLabel(student) + ' · ' + dayName(date) + ' ' + fmtDate(date);
   document.getElementById('comment-sheet-text').value = existing ? existing.text : '';
   document.getElementById('comment-sheet').classList.add('open');
   setTimeout(() => document.getElementById('comment-sheet-text').focus(), 30);
@@ -2005,13 +2086,13 @@ function saveCommentSheet() {
   if (!commentSheetStudent || !commentSheetDate) { closeCommentSheet(); return; }
   const text = document.getElementById('comment-sheet-text').value.trim();
   const label = fmtDate(commentSheetDate);
-  const existing = commentFor(commentSheetStudent.name, commentSheetDate);
+  const existing = commentFor(commentSheetStudent, commentSheetDate);
   if (!text) {
     if (existing) appData.comments = appData.comments.filter(c => c !== existing);
   } else if (existing) {
     existing.text = text;
   } else {
-    appData.comments.push({student: commentSheetStudent.name, date: label, text});
+    appData.comments.push({student: commentSheetStudent.name, row: commentSheetStudent.row, date: label, text});
   }
   saveToStorage();
   updateCounts();
@@ -2026,7 +2107,7 @@ function renderStudentList() {
 
   const q = sessionQuery.trim().toLowerCase();
   const students = [...appData.students].sort((a, b) => a.name.localeCompare(b.name));
-  const codedCount = students.filter(s => appData.sessions[sessionKey(s.name, date)]).length;
+  const codedCount = students.filter(s => appData.sessions[sessionKey(s, date)]).length;
   const countEl = document.getElementById('session-coded-count');
   if (countEl) countEl.textContent = codedCount + ' of ' + students.length + ' coded';
   document.querySelectorAll('[data-session-filter]').forEach(btn => {
@@ -2035,7 +2116,7 @@ function renderStudentList() {
 
   const visible = students.filter(s => {
     if (q && !s.name.toLowerCase().includes(q)) return false;
-    const has = !!appData.sessions[sessionKey(s.name, date)];
+    const has = !!appData.sessions[sessionKey(s, date)];
     if (sessionFilter === 'done') return has;
     if (sessionFilter === 'todo') return !has;
     return true;
@@ -2047,8 +2128,8 @@ function renderStudentList() {
     return;
   }
   visible.forEach(student => {
-    const code = appData.sessions[sessionKey(student.name, date)] || '';
-    const note = commentFor(student.name, date);
+    const code = appData.sessions[sessionKey(student, date)] || '';
+    const note = commentFor(student, date);
     const meta = [student.freq, student.site].filter(Boolean).join(' · ');
     const commentBit = note && note.text.trim() ? ' · ' + note.text.trim() : '';
     const row = document.createElement('div');
@@ -2056,7 +2137,7 @@ function renderStudentList() {
     const actions = code
       ? `<button type="button" class="code-pill code-display ${getCodeColorClass(code)}" data-act="picker">${escHtml(code)}</button>`
       : `<div class="row-acts"><button type="button" class="quick-suggest" data-act="quick" data-code="${suggestedCode(student)}">${suggestedCode(student)}</button><button type="button" class="quick-absent" data-act="absent">A</button><button type="button" class="quick-more" data-act="picker">…</button></div>`;
-    row.innerHTML = `<div class="who"><div class="n">${escHtml(student.name)}</div><div class="f">${escHtml(meta + commentBit)}</div></div>${actions}`;
+    row.innerHTML = `<div class="who"><div class="n">${nameWithTag(student)}</div><div class="f">${escHtml(meta + commentBit)}</div></div>${actions}`;
     row.querySelector('[data-act="picker"]').onclick = () => openCodePicker(student, date);
     const quick = row.querySelector('[data-act="quick"]');
     if (quick) quick.onclick = () => setSessionCode(student, date, quick.dataset.code);
@@ -2078,10 +2159,10 @@ function openCodePicker(student, date) {
   pickerStudent = student;
   pickerDate = date;
 
-  document.getElementById('picker-student').textContent = student.name;
+  document.getElementById('picker-student').textContent = studentLabel(student);
   document.getElementById('picker-date').textContent = `${dayName(date)} ${fmtDate(date)}`;
 
-  const key = sessionKey(student.name, date);
+  const key = sessionKey(student, date);
   builderCode = appData.sessions[key] || '';
   renderBuilder();
 
@@ -2098,7 +2179,7 @@ function closeCodePicker() {
 function commitCode() {
   // Save the built code and close
   if (!pickerStudent || !pickerDate) return;
-  const key = sessionKey(pickerStudent.name, pickerDate);
+  const key = sessionKey(pickerStudent, pickerDate);
   appData.sessions[key] = builderCode.trim();
   saveToStorage();
   renderDateSelector();
@@ -2258,7 +2339,7 @@ function renderCommentSelects() {
   const dateSel = document.getElementById('comment-date-select');
 
   studentSel.innerHTML = appData.students.map(s =>
-    `<option value="${s.name}">${s.name}</option>`
+    `<option value="${s.row}">${escHtml(studentLabel(s))}</option>`
   ).join('');
 
   dateSel.innerHTML = appData.dates.filter(d => !isWeekend(d)).map(d =>
@@ -2280,7 +2361,7 @@ function renderComments() {
     entry.className = 'comment-entry';
     entry.innerHTML = `
       <div class="comment-header">
-        <span class="comment-student">${c.student}</span>
+        <span class="comment-student">${escHtml(studentByRow(c.row) ? studentLabel(studentByRow(c.row)) : c.student)}</span>
         <span class="comment-date">${c.date}</span>
         <button class="delete-comment-btn" data-idx="${i}">Remove</button>
       </div>
@@ -2307,9 +2388,10 @@ function renderComments() {
 }
 
 function addComment() {
-  const student = document.getElementById('comment-student-select').value;
+  const student = studentByRow(parseInt(document.getElementById('comment-student-select').value, 10));
   const date = document.getElementById('comment-date-select').value;
-  appData.comments.push({student, date, text: ''});
+  if (!student) return;
+  appData.comments.push({student: student.name, row: student.row, date, text: ''});
   saveToStorage();
   renderComments();
   updateCounts();
@@ -2605,7 +2687,7 @@ function renderExport() {
     let direct = 0, indirect = 0, status = 0, sessionCount = 0;
     const codes = [];
     appData.dates.forEach(d => {
-      const code = appData.sessions[sessionKey(s.name, d)];
+      const code = appData.sessions[sessionKey(s, d)];
       if (!code) return;
       sessionCount++;
       codes.push({date: fmtDate(d), code});
@@ -2614,7 +2696,7 @@ function renderExport() {
       indirect += cls.indirect;
       status += cls.status;
     });
-    return {name: s.name, freq: s.freq, direct, indirect, status, total: direct + indirect + status, sessionCount, codes};
+    return {name: studentLabel(s), freq: s.freq, direct, indirect, status, total: direct + indirect + status, sessionCount, codes};
   });
 
   const studentsWithSessions = studentStats.filter(s => s.sessionCount > 0);
@@ -2665,7 +2747,7 @@ function renderExport() {
     let dayDirect = dayTotals.direct, dayIndirect = dayTotals.indirect;
     let dayStudentCount = 0;
     appData.students.forEach(s => {
-      if (appData.sessions[sessionKey(s.name, d)]) dayStudentCount++;
+      if (appData.sessions[sessionKey(s, d)]) dayStudentCount++;
     });
     const dayNotesMins = dateTotalMins(dateKey);
     const dayCodeMins = dayDirect + dayIndirect;
@@ -2860,7 +2942,7 @@ function renderChart() {
   // Determine which dates to show: weekdays, plus any weekend that has data
   const visibleDates = appData.dates.filter(d => {
     if (!isWeekend(d)) return true;
-    return appData.students.some(s => appData.sessions[sessionKey(s.name, d)]);
+    return appData.students.some(s => appData.sessions[sessionKey(s, d)]);
   });
 
   if (!visibleDates.length || !appData.students.length) {
@@ -2868,12 +2950,12 @@ function renderChart() {
     return;
   }
 
-  // Build comment lookup: student name -> combined comment texts
+  // Build comment lookup: sheet row -> combined comment texts
   const commentMap = {};
   appData.comments.forEach(c => {
     if (!c.text.trim()) return;
-    if (!commentMap[c.student]) commentMap[c.student] = [];
-    commentMap[c.student].push(c.text.trim());
+    if (!commentMap[c.row]) commentMap[c.row] = [];
+    commentMap[c.row].push(c.text.trim());
   });
 
   // Show all students always so the full chart is visible and editable
@@ -2892,14 +2974,14 @@ function renderChart() {
   // Rows
   students.forEach((s, si) => {
     html += '<tr>';
-    html += `<td class="chart-name-col">${escHtml(s.name)}</td>`;
+    html += `<td class="chart-name-col">${nameWithTag(s)}</td>`;
     visibleDates.forEach((d, di) => {
-      const code = appData.sessions[sessionKey(s.name, d)] || '';
+      const code = appData.sessions[sessionKey(s, d)] || '';
       const colorCls = code ? ' chart-' + getCodeColorClass(code) : '';
       const on = selected && dayStart(d) === dayStart(selected);
       html += `<td class="chart-code${on ? ' chart-cell-tap chart-col-selected' : ''}${colorCls}" ${on ? `data-si="${si}" data-di="${di}"` : ''}>${code ? escHtml(code) : ''}</td>`;
     });
-    const cmt = commentMap[s.name] ? commentMap[s.name].join('; ') : '';
+    const cmt = commentMap[s.row] ? commentMap[s.row].join('; ') : '';
     html += `<td class="chart-comment-col" title="${escHtml(cmt)}">${escHtml(cmt)}</td>`;
     html += '</tr>';
   });
@@ -2959,6 +3041,7 @@ function generateTxt() {
   lines.push('# Codes: T=therapy, G1/G2=group, A=absent, M=makeup, Y=tele, S=scheduling, C=consult, R=record review, D=documentation, I=integrated');
   lines.push('# Modifiers: X/=half session, X X=double, X//=less than half, X/Y=mixed (half each)');
   lines.push('# For duplicate last names add the first name: Alvarez Mia, Alvarez Leo. ');
+  lines.push('# A "# row N" line sends the next line to sheet row N. Keep it with its line.');
   lines.push('# Format like this: "date (m/d), student last name, code"');
   lines.push('# type below 👇 ');
   lines.push('');
@@ -2970,8 +3053,9 @@ function generateTxt() {
   // Student rows
   appData.students.forEach(s => {
     const codes = appData.dates.map(d => {
-      return appData.sessions[sessionKey(s.name, d)] || '';
+      return appData.sessions[sessionKey(s, d)] || '';
     });
+    lines.push(`# row ${s.row}`);
     lines.push(s.name + '\t' + codes.join('\t'));
   });
 
@@ -2987,6 +3071,7 @@ function generateTxt() {
       // Use full name (space-separated, no comma) so ambiguous students resolve correctly
       // "Brooks, Jonah (A)" -> "brooks jonah (a)". The filler matches this to the right row
       const studentKey = c.student.replace(/,/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (Number.isInteger(c.row)) lines.push(`# row ${c.row}`);
       lines.push(`${studentKey}, ${c.date}: ${c.text.trim()}`);
     }
   });
@@ -3173,7 +3258,7 @@ function calcDayCodeTotals(date) {
   const result = {direct: 0, indirect: 0};
   const seenGroups = new Set();
   appData.students.forEach(s => {
-    const code = appData.sessions[sessionKey(s.name, date)];
+    const code = appData.sessions[sessionKey(s, date)];
     if (!code) return;
     tokenizeCode(code).forEach(({code: c, modifier}) => {
       if (STATUS_CODE_SET.has(c)) return;
@@ -3201,7 +3286,7 @@ function fmtHrMin(mins) {
 function isClosedDay(date) {
   const tokens = [];
   appData.students.forEach(s => {
-    const code = appData.sessions[sessionKey(s.name, date)];
+    const code = appData.sessions[sessionKey(s, date)];
     if (!code) return;
     tokenizeCode(code).forEach(t => tokens.push(t.code));
   });
@@ -3216,9 +3301,9 @@ function studentCodeMinutes(code) {
   }, 0);
 }
 
-function commentOnDay(studentName, date) {
+function commentOnDay(student, date) {
   const label = fmtDate(date);
-  return appData.comments.some(c => c.student === studentName && c.date === label && c.text.trim());
+  return appData.comments.some(c => c.row === student.row && c.date === label && c.text.trim());
 }
 
 function collectIssues() {
@@ -3230,6 +3315,14 @@ function collectIssues() {
   if (lastReportedSaveError) {
     issues.push({level: 'red', title: 'The last save failed', detail: lastReportedSaveError, panel: 'sessions'});
   }
+  (appData.rowMoves || []).forEach((move, moveIndex) => {
+    const s = studentByRow(move.row);
+    if (!s) return;
+    const d = appData.dates.find(x => fmtDateKey(x) === move.dateKey);
+    const when = d ? dayName(d) + ' ' + fmtDate(d) : 'no date';
+    const what = move.comment ? 'comment for ' + when : move.code + ' on ' + when;
+    issues.push({level: 'amber', title: studentLabel(s) + ': ' + what + ' moved to this row', detail: 'This name is on two rows. Check the row, then tap OK.', dateIndex: d ? appData.dates.indexOf(d) : undefined, panel: move.comment ? 'comments' : 'sessions', studentRow: move.comment ? undefined : s.row, dateObj: d, moveIndex});
+  });
   appData.dates.forEach((d, dateIndex) => {
     if (isWeekend(d)) return;
     const parts = dayParts(d);
@@ -3249,23 +3342,23 @@ function collectIssues() {
       }
     });
     appData.students.forEach(s => {
-      const code = appData.sessions[sessionKey(s.name, d)];
+      const code = appData.sessions[sessionKey(s, d)];
       if (!code) return;
       const tokens = tokenizeCode(code);
       if (tokens.some(t => t.invalid === '//')) {
-        issues.push({level: 'amber', title: s.name + ': double slash in ' + code, detail: 'Use a single slash. It is billed as 15.', dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+        issues.push({level: 'amber', title: studentLabel(s) + ': double slash in ' + code, detail: 'Use a single slash. It is billed as 15.', dateIndex, panel: 'sessions', studentRow: s.row, dateObj: d});
       }
       if (tokens.some(t => !isKnownCode(t.code))) {
-        issues.push({level: 'amber', title: s.name + ': unknown code ' + code, detail: 'Open the picker and replace it', dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+        issues.push({level: 'amber', title: studentLabel(s) + ': unknown code ' + code, detail: 'Open the picker and replace it', dateIndex, panel: 'sessions', studentRow: s.row, dateObj: d});
       }
       if (/\/[A-Za-z(]/.test(code)) {
-        issues.push({level: 'amber', title: s.name + ': confirm ' + code, detail: 'A slash halves only the code before it', dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+        issues.push({level: 'amber', title: studentLabel(s) + ': confirm ' + code, detail: 'A slash halves only the code before it', dateIndex, panel: 'sessions', studentRow: s.row, dateObj: d});
       }
-      if (studentCodeMinutes(code) > 30 && !commentOnDay(s.name, d)) {
-        issues.push({level: 'amber', title: s.name + ': ' + code + ' has extra time and no comment', detail: 'Add a comment dated ' + fmtDate(d), dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+      if (studentCodeMinutes(code) > 30 && !commentOnDay(s, d)) {
+        issues.push({level: 'amber', title: studentLabel(s) + ': ' + code + ' has extra time and no comment', detail: 'Add a comment dated ' + fmtDate(d), dateIndex, panel: 'sessions', studentRow: s.row, dateObj: d});
       }
-      if (tokens.some(t => STATUS_CODE_SET.has(t.code)) && !commentOnDay(s.name, d)) {
-        issues.push({level: 'amber', title: s.name + ': ' + code + ' without a reason', detail: 'Add a comment dated ' + fmtDate(d), dateIndex, panel: 'sessions', studentName: s.name, dateObj: d});
+      if (tokens.some(t => STATUS_CODE_SET.has(t.code)) && !commentOnDay(s, d)) {
+        issues.push({level: 'amber', title: studentLabel(s) + ': ' + code + ' without a reason', detail: 'Add a comment dated ' + fmtDate(d), dateIndex, panel: 'sessions', studentRow: s.row, dateObj: d});
       }
     });
   });
@@ -3286,7 +3379,7 @@ function renderReview() {
   const red = issues.some(i => i.level === 'red');
   const settings = periodSettings();
   const list = issues.length
-    ? issues.map((issue, i) => `<div class="issue ${issue.level}" data-issue="${i}"><div><div class="t">${escHtml(issue.title)}</div><div class="d">${escHtml(issue.detail)}</div></div><div class="go">›</div></div>`).join('')
+    ? issues.map((issue, i) => `<div class="issue ${issue.level}" data-issue="${i}"><div><div class="t">${escHtml(issue.title)}</div><div class="d">${escHtml(issue.detail)}</div></div>${typeof issue.moveIndex === 'number' ? `<button type="button" class="issue-ok" data-move="${issue.moveIndex}">OK</button>` : '<div class="go">›</div>'}</div>`).join('')
     : '<div class="issue ok"><div><div class="t">Nothing to fix</div><div class="d">Every working day is at or above the minimum and every code reads cleanly.</div></div></div>';
   panel.innerHTML = `
     <div class="session-head">Before export</div>
@@ -3303,6 +3396,15 @@ function renderReview() {
     </div>`;
   panel.querySelectorAll('[data-issue]').forEach(row => {
     row.onclick = () => openIssue(issues[parseInt(row.dataset.issue, 10)]);
+  });
+  panel.querySelectorAll('[data-move]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      appData.rowMoves.splice(parseInt(btn.dataset.move, 10), 1);
+      saveToStorage();
+      renderReview();
+      updateCounts();
+    };
   });
   const exportBtn = document.getElementById('review-export-btn');
   exportBtn.onclick = () => { if (!exportBtn.disabled) downloadTxt(generateTxt()); };
@@ -3336,8 +3438,8 @@ function openIssue(issue) {
     renderDayTotal();
     renderStudentList();
   }
-  if (issue.studentName && issue.dateObj) {
-    const student = appData.students.find(s => s.name === issue.studentName);
+  if (issue.studentRow && issue.dateObj) {
+    const student = studentByRow(issue.studentRow);
     if (student) openCodePicker(student, issue.dateObj);
   }
 }
@@ -3428,6 +3530,7 @@ document.addEventListener('DOMContentLoaded', () => {
     restoreBtn.textContent = `Resume: ${saved.filename || 'saved session'}`;
     restoreBtn.onclick = () => {
       appData = {...appData, ...saved, selectedDate: null};
+      saveToStorage();
       showApp();
     };
   }
@@ -3574,6 +3677,7 @@ function handleFile(file) {
       appData.sessions = parsed.sessions || {};
       appData.comments = parsed.comments || [];
       appData.notes = parsed.notes || {};
+      appData.rowMoves = [];
       appData.settings = {dailyMinimumMinutes: 390, dailyCeilingMinutes: 540, reminderTime: ''};
       learnActivitiesFromNotes(appData.notes);
       appData.selectedDate = null;

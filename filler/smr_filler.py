@@ -9,7 +9,7 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
-VERSION = "2026-09-22-a"  # a slash halves only the code immediately before it
+VERSION = "2026-10-05-a"  # codes and comments go to the sheet row the app names
 
 import re
 import sys
@@ -42,13 +42,28 @@ HALF_SESSION_MINUTES = 15
 # Input Parser
 # ---------------------------------------------------------------------------
 
+# The app writes "# row N" before a student line. It names the sheet row, since
+# one student can have two rows with the same name (roundtable entry 048).
+# Older readers skip it as a comment line.
+ROW_LINE_RE = re.compile(r'^#\s*row\s+(\d+)\s*$', re.IGNORECASE)
+
+
+def _row_tag(line):
+    match = ROW_LINE_RE.match(line.strip())
+    return int(match.group(1)) if match else None
+
+
 def _parse_grid_sessions(body_lines):
     """Parse grid-format sessions (tab-separated table from Apple Notes)."""
     sessions = []
     dates = []
+    row = None
 
     for line in body_lines:
         stripped = line.strip()
+        if _row_tag(stripped) is not None:
+            row = _row_tag(stripped)
+            continue
         if not stripped or stripped.startswith("#"):
             continue
         # Skip decorative separators (em-dash lines from Apple Notes)
@@ -64,6 +79,7 @@ def _parse_grid_sessions(body_lines):
 
         # Data row: student name + codes per date
         student = parts[0].strip()
+        line_row, row = row, None
         if not student:
             continue
 
@@ -73,13 +89,17 @@ def _parse_grid_sessions(body_lines):
             if i + 1 < len(parts):
                 code = parts[i + 1].strip()
                 if code:
-                    sessions.append((date, student, code))
+                    sessions.append((date, student, code, line_row))
 
     return sessions
 
 
 def parse_input(path):
-    """Parse the three-section input file. Returns (sessions, comments, notes)."""
+    """Parse the three-section input file. Returns (sessions, comments, notes).
+
+    sessions: (date, student, code, row). comments: (student, text, row).
+    row is the sheet row from a "# row N" line, or None.
+    """
     with open(path) as f:
         text = f.read()
 
@@ -101,26 +121,36 @@ def parse_input(path):
             if data_lines and "\t" in data_lines[0]:
                 sessions = _parse_grid_sessions(body_lines)
             else:
+                row = None
                 for line in body_lines:
                     line = line.strip()
+                    if _row_tag(line) is not None:
+                        row = _row_tag(line)
+                        continue
                     if not line or line.startswith("#"):
                         continue
+                    line_row, row = row, None
                     parts = [p.strip() for p in line.split(",", 2)]
                     if len(parts) == 3:
-                        sessions.append((parts[0], parts[1], parts[2]))
+                        sessions.append((parts[0], parts[1], parts[2], line_row))
                     else:
                         print(f"  WARN: bad session line: {line!r}")
 
         elif header.startswith("comment"):
+            row = None
             for line in body_lines:
                 line = line.strip()
+                if _row_tag(line) is not None:
+                    row = _row_tag(line)
+                    continue
                 if not line or line.startswith("#"):
                     continue
                 if all(c in '—-–_' for c in line):
                     continue
+                line_row, row = row, None
                 parts = [p.strip() for p in line.split(",", 1)]
                 if len(parts) == 2:
-                    comments.append((parts[0], parts[1]))
+                    comments.append((parts[0], parts[1], line_row))
                 else:
                     print(f"  WARN: bad comment line: {line!r}")
 
@@ -144,25 +174,22 @@ def parse_input(path):
 def build_student_map(ws):
     """Build lookup dict from student keys to row numbers.
 
-    Returns (student_map, ambiguous_lastnames).
-    student_map maps normalized keys -> row.
-    ambiguous_lastnames is a set of last names that appear more than once.
+    Returns (student_map, ambiguous).
+    student_map maps normalized keys that name exactly one row -> row.
+    ambiguous is the set of keys that name more than one row: a shared last
+    name, a "last first" shared by an (A)/(B) pair, or one name written on two
+    rows (an Ind and a Gp mandate, roundtable entry 048). Those need the row.
     """
-    student_map = {}          # normalized key -> row
-    lastname_counts = defaultdict(list)  # lastname -> [row, ...]
-    # Track "last first" keys (without suffix) to detect collisions
-    # e.g. "Brooks, Jonah (a)" and "Brooks, Jonah (b)" both produce "brooks jonah"
-    base_name_counts = defaultdict(list)  # "last first" -> [row, ...]
+    key_rows = defaultdict(set)  # normalized key -> {row, ...}
 
     for row in range(STUDENT_ROW_START, STUDENT_ROW_END + 1):
         name = ws.cell(row=row, column=1).value
         if not name:
             continue
         name = str(name).strip()
-        name_lower = name.lower()
 
         # Full cell value key (e.g. "brooks, jonah (a)")
-        student_map[name_lower] = row
+        key_rows[name.lower()].add(row)
 
         # Parse "Last, First" or "Last, First (A)"
         m = re.match(r'^([^,]+),\s*(.+)$', name)
@@ -171,28 +198,30 @@ def build_student_map(ws):
             first_full = m.group(2).strip().lower()  # e.g. "jonah (a)"
             first = re.sub(r'\s*\([^)]*\)\s*$', '', first_full).strip()
 
-            base_key = f"{last} {first}"
-            base_name_counts[base_key].append(row)
-
+            key_rows[f"{last} {first}"].add(row)
             # "last first (x)" key if suffix present
             if first_full != first:
-                student_map[f"{last} {first_full}"] = row
+                key_rows[f"{last} {first_full}"].add(row)
+            key_rows[last].add(row)
 
-            lastname_counts[last].append(row)
-
-    ambiguous = {ln for ln, rows in lastname_counts.items() if len(rows) > 1}
-
-    # Add "last first" keys only when unambiguous (no suffix collisions)
-    for base_key, rows in base_name_counts.items():
-        if len(rows) == 1:
-            student_map[base_key] = rows[0]
-
-    # Add last-name-only keys for unambiguous names
-    for ln, rows in lastname_counts.items():
-        if len(rows) == 1:
-            student_map[ln] = rows[0]
-
+    student_map = {key: next(iter(rows)) for key, rows in key_rows.items() if len(rows) == 1}
+    ambiguous = {key for key, rows in key_rows.items() if len(rows) > 1}
     return student_map, ambiguous
+
+
+def build_row_names(ws):
+    """{row: name} for every named student row."""
+    names = {}
+    for row in range(STUDENT_ROW_START, STUDENT_ROW_END + 1):
+        name = ws.cell(row=row, column=1).value
+        if name:
+            names[row] = str(name).strip()
+    return names
+
+
+def _name_key(name):
+    """'Brooks, Jonah (A)' and 'brooks jonah (a)' compare equal."""
+    return re.sub(r'\s+', ' ', str(name).replace(",", " ")).strip().lower()
 
 
 def resolve_student(key, student_map, ambiguous):
@@ -211,12 +240,22 @@ def resolve_student(key, student_map, ambiguous):
     if norm_no_comma in student_map:
         return student_map[norm_no_comma]
 
-    # 3. Single-word lookup — last name not found above; warn if it's ambiguous.
-    parts = norm_no_comma.split()
-    if len(parts) == 1 and norm_no_comma in ambiguous:
-        print(f"  WARN: ambiguous last name '{key}' — specify first name")
+    # 3. The key names more than one row. Do not guess which.
+    if norm in ambiguous or norm_no_comma in ambiguous:
+        print(f"  WARN: '{key}' is on more than one row. Export again from the app, "
+              f"or add the first name.")
 
     return None
+
+
+def resolve_row(key, row, student_map, ambiguous, row_names):
+    """Use the row the app named when that row holds this name. Else match by name."""
+    if row is not None:
+        name = row_names.get(row)
+        if name is not None and _name_key(name) == _name_key(key):
+            return row
+        print(f"  WARN: row {row} does not hold '{key}'; matching by name instead")
+    return resolve_student(key, student_map, ambiguous)
 
 # ---------------------------------------------------------------------------
 # Date Map
@@ -467,7 +506,7 @@ def _clear_managed_region(ws, row_start, row_end, col_start, col_end):
                 cell.value = None
 
 
-def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map):
+def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map, row_names):
     """Write treatment codes into the grid. Returns count of cells written."""
     # Authoritative write: clear the grid first so deletions in the PWA propagate.
     _clear_managed_region(
@@ -475,8 +514,8 @@ def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map):
     )
 
     count = 0
-    for date_str, student_key, code in sessions:
-        row = resolve_student(student_key, student_map, ambiguous)
+    for date_str, student_key, code, tagged_row in sessions:
+        row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names)
         if row is None:
             print(f"  WARN: student not found: '{student_key}'")
             continue
@@ -489,7 +528,7 @@ def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map):
     return count
 
 
-def fill_comments(ws, comments, student_map, ambiguous):
+def fill_comments(ws, comments, student_map, ambiguous, row_names):
     """Write comments into column W. Returns count of students with comments."""
     # Authoritative write: clear column W first so cleared comments in the PWA propagate.
     _clear_managed_region(
@@ -498,8 +537,8 @@ def fill_comments(ws, comments, student_map, ambiguous):
 
     # Collect all comments per student row so multiple comments concatenate
     row_comments = defaultdict(list)
-    for student_key, text in comments:
-        row = resolve_student(student_key, student_map, ambiguous)
+    for student_key, text, tagged_row in comments:
+        row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names)
         if row is None:
             print(f"  WARN: student not found for comment: '{student_key}'")
             continue
@@ -657,7 +696,8 @@ def main():
     # Build maps from the data_only workbook (has computed values)
     print("Building student map...")
     student_map, ambiguous = build_student_map(ws_data)
-    print(f"  {len(student_map)} lookup keys, {len(ambiguous)} ambiguous last names: {ambiguous}")
+    row_names = build_row_names(ws_data)
+    print(f"  {len(student_map)} lookup keys, {len(ambiguous)} keys on more than one row")
 
     print("Building date map...")
     date_map = build_date_map(ws_data)
@@ -665,11 +705,11 @@ def main():
 
     # Fill data into the edit workbook
     print("Filling treatment codes...")
-    n_sessions = fill_treatment_codes(ws_edit, sessions, student_map, ambiguous, date_map)
+    n_sessions = fill_treatment_codes(ws_edit, sessions, student_map, ambiguous, date_map, row_names)
     print(f"  Wrote {n_sessions} cells")
 
     print("Filling comments...")
-    n_comments = fill_comments(ws_edit, comments, student_map, ambiguous)
+    n_comments = fill_comments(ws_edit, comments, student_map, ambiguous, row_names)
     print(f"  Wrote {n_comments} comments")
 
     print("Filling notes...")

@@ -60,10 +60,23 @@
 3/12, Alvarez Leo, G1
 3/12, Chen Priya, G1D
 
+# --- 3/13 ---
+# One invented student on two sheet rows with the same name: Ind on row 12,
+# Gp on row 13. T on the Ind row and G1 on the Gp row. Each row keeps its own
+# code and each counts once: T 30 + G1 30 = 60.
+# row 12
+3/13, Evans Kai, T
+# row 13
+3/13, Evans Kai, G1
+
 ## Comments
 Alvarez Mia, 3/2: on time
 Chen Priya, 3/3: not in group
 Brooks Jonah (A), 3/4: school closed
+# row 12
+Evans Kai, 3/13: seen alone
+# row 13
+Evans Kai, 3/13: seen in group
 
 ## Notes
 3/2, Treatment prep (30 min)
