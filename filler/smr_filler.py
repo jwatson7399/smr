@@ -9,7 +9,7 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
-VERSION = "2026-10-05-a"  # codes and comments go to the sheet row the app names
+VERSION = "2026-10-05-b"  # a group counts its longest entry once per day
 
 import re
 import sys
@@ -599,7 +599,9 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
 
     for (month, day), col in date_map.items():
         total_minutes = 0
-        seen_groups = set()  # Each group code (G1, G2, G3) counts once per day
+        # Each group code counts once per day, at its longest entry: G1 and G1/
+        # in one group are 30 whichever row comes first (roundtable entry 048).
+        group_minutes = {}
 
         # Step A: Sum session minutes from treatment grid
         for row in range(STUDENT_ROW_START, STUDENT_ROW_END + 1):
@@ -634,10 +636,11 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
                 else:
                     minutes = FULL_SESSION_MINUTES * modifier
                 if u in GROUP_CODES:
-                    if u in seen_groups:
-                        continue
-                    seen_groups.add(u)
+                    group_minutes[u] = max(group_minutes.get(u, 0), minutes)
+                    continue
                 total_minutes += minutes
+
+        total_minutes += sum(group_minutes.values())
 
         # Step B: Add notes time for this date
         notes_minutes = parse_notes_durations(notes_text, month, day)

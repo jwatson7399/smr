@@ -69,6 +69,12 @@
 # row 13
 3/13, Evans Kai, G1
 
+# --- 3/16 ---
+# G1/ is listed first and G1 second in the same group. The group counts its
+# longest entry once: 30, not 15.
+3/16, Alvarez Mia, G1/
+3/16, Alvarez Leo, G1
+
 ## Comments
 Alvarez Mia, 3/2: on time
 Chen Priya, 3/3: not in group

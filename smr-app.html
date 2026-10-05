@@ -3254,23 +3254,25 @@ function classifyMinutes(compound) {
 }
 
 function calcDayCodeTotals(date) {
-  // Group codes count once per code per day. The first one's modifier wins.
+  // Group codes count once per code per day, at the longest entry: G1 and G1/
+  // in one group are 30 whichever is listed first (entry 048).
   const result = {direct: 0, indirect: 0};
-  const seenGroups = new Set();
+  const groupMins = {};
+  const add = (c, mins) => {
+    if (DIRECT_CODE_SET.has(c)) result.direct += mins;
+    else if (INDIRECT_CODE_SET.has(c)) result.indirect += mins;
+  };
   appData.students.forEach(s => {
     const code = appData.sessions[sessionKey(s, date)];
     if (!code) return;
     tokenizeCode(code).forEach(({code: c, modifier}) => {
       if (STATUS_CODE_SET.has(c)) return;
-      if (GROUP_CODE_SET.has(c)) {
-        if (seenGroups.has(c)) return;
-        seenGroups.add(c);
-      }
       const mins = modifierMinutes(c, modifier);
-      if (DIRECT_CODE_SET.has(c)) result.direct += mins;
-      else if (INDIRECT_CODE_SET.has(c)) result.indirect += mins;
+      if (GROUP_CODE_SET.has(c)) groupMins[c] = Math.max(groupMins[c] || 0, mins);
+      else add(c, mins);
     });
   });
+  Object.entries(groupMins).forEach(([c, mins]) => add(c, mins));
   return result;
 }
 

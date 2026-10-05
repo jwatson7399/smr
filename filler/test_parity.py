@@ -15,6 +15,8 @@ M2 and M3 dedup once per day. A(M) is 0. // bills as 15.
 3/12 codes: two G1 plus one G1D = G1 once 30 + D 30 = 60. Total 60.
 3/13 codes: one name on rows 12 (Ind) and 13 (Gp). T on row 12 30 + G1 on row 13 30 = 60.
   Each row keeps its own code and each counts once (entry 048). Total 60.
+3/16 codes: G1/ listed first, then G1, one group. It counts its longest entry once = 30.
+  First-listed would give 15 (entry 048). Total 30.
 The 6/8-6/12 note is a range and adds nothing to any of these days.
 """
 
@@ -46,6 +48,7 @@ EXPECTED = {
     "3/11": 210,
     "3/12": 60,
     "3/13": 60,
+    "3/16": 30,
 }
 # date -> code minutes only, before notes
 EXPECTED_CODES = {
@@ -59,6 +62,7 @@ EXPECTED_CODES = {
     "3/11": 210,
     "3/12": 60,
     "3/13": 60,
+    "3/16": 30,
 }
 
 # (name, column B). Sheet rows start at 6 in this order. Evans Kai is one
@@ -75,7 +79,7 @@ STUDENTS = [
 ]
 ROW_OF = {name: smr_filler.STUDENT_ROW_START + i for i, (name, _) in enumerate(STUDENTS)}
 EVANS_IND, EVANS_GP = 12, 13
-DATES = [(3, 2), (3, 3), (3, 4), (3, 5), (3, 6), (3, 9), (3, 10), (3, 11), (3, 12), (3, 13)]
+DATES = [(3, 2), (3, 3), (3, 4), (3, 5), (3, 6), (3, 9), (3, 10), (3, 11), (3, 12), (3, 13), (3, 16)]
 
 
 def build_sheet():
@@ -314,7 +318,7 @@ def main():
     assert app["imported"]["3/6"][0]["activity"] == "Task"
     assert "6/8" not in app["imported"]
     assert app["imported"]["3/10"][0]["time"] == "15 min"
-    assert len(sessions) == 37
+    assert len(sessions) == 39
     print("parity ok", totals)
 
 
