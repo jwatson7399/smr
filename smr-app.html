@@ -1876,8 +1876,10 @@ function dayParts(date) {
   return {codes, notes, total: codes + notes};
 }
 
+// Gp rows get no guessed code: "Do not guess. Let me pick the code each time."
+// A and the picker stay. Ind rows keep T (entry 048).
 function suggestedCode(student) {
-  return /gp/i.test(student.freq || '') ? 'G1' : 'T';
+  return mandateTag(student) === 'Gp' ? '' : 'T';
 }
 
 function periodLabel() {
@@ -2134,9 +2136,10 @@ function renderStudentList() {
     const commentBit = note && note.text.trim() ? ' · ' + note.text.trim() : '';
     const row = document.createElement('div');
     row.className = 'student-row' + (code ? ' coded' : '');
+    const suggest = suggestedCode(student);
     const actions = code
       ? `<button type="button" class="code-pill code-display ${getCodeColorClass(code)}" data-act="picker">${escHtml(code)}</button>`
-      : `<div class="row-acts"><button type="button" class="quick-suggest" data-act="quick" data-code="${suggestedCode(student)}">${suggestedCode(student)}</button><button type="button" class="quick-absent" data-act="absent">A</button><button type="button" class="quick-more" data-act="picker">…</button></div>`;
+      : `<div class="row-acts">${suggest ? `<button type="button" class="quick-suggest" data-act="quick" data-code="${suggest}">${suggest}</button>` : ''}<button type="button" class="quick-absent" data-act="absent">A</button><button type="button" class="quick-more" data-act="picker">…</button></div>`;
     row.innerHTML = `<div class="who"><div class="n">${nameWithTag(student)}</div><div class="f">${escHtml(meta + commentBit)}</div></div>${actions}`;
     row.querySelector('[data-act="picker"]').onclick = () => openCodePicker(student, date);
     const quick = row.querySelector('[data-act="quick"]');
