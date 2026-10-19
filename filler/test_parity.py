@@ -319,6 +319,11 @@ def main():
     assert "6/8" not in app["imported"]
     assert app["imported"]["3/10"][0]["time"] == "15 min"
     assert len(sessions) == 39
+    html = APP.read_text()
+    sw = APP.with_name("smr-sw.js").read_text()
+    app_version = html.split("const APP_VERSION = '", 1)[1].split("'", 1)[0]
+    cache_name = sw.split("const CACHE_NAME = '", 1)[1].split("'", 1)[0]
+    assert app_version == cache_name, (app_version, cache_name)
     print("parity ok", totals)
 
 

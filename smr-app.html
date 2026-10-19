@@ -1644,6 +1644,8 @@ function isWeekend(d) {
 // LOCAL STORAGE
 // ══════════════════════════════════════════════
 let lastReportedSaveError = null;
+// Shown beside the save state. Keep it equal to CACHE_NAME in smr-sw.js.
+const APP_VERSION = 'smr-v25';
 
 function setSaveState(ok, detail) {
   const el = document.getElementById('save-state');
@@ -1651,7 +1653,7 @@ function setSaveState(ok, detail) {
   const now = new Date();
   const time = now.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   el.classList.toggle('bad', !ok);
-  el.textContent = ok ? `Saved ${time}` : `Not saved. ${detail || 'Could not save'}`;
+  el.textContent = (ok ? `Saved ${time}` : `Not saved. ${detail || 'Could not save'}`) + ` · ${APP_VERSION}`;
 }
 
 function saveToStorage() {
@@ -3711,9 +3713,27 @@ function handleFile(file) {
   };
   reader.readAsArrayBuffer(file);
 }
-// Register service worker
+// Register service worker. An iPhone home screen app usually resumes instead
+// of loading, so ask for an update each time the app comes to the front, and
+// load the new version once it takes over (roundtable entry 060). Everything
+// is already saved; wait while a sheet or form is open.
+function reloadWhenIdle() {
+  if (document.querySelector('.open')) { setTimeout(reloadWhenIdle, 2000); return; }
+  location.reload();
+}
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('smr-sw.js').catch(() => {});
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    reloadWhenIdle();
+  });
+  navigator.serviceWorker.register('smr-sw.js').then(reg => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch(() => {});
 }
 </script>
 </body>
