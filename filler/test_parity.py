@@ -15,6 +15,8 @@ M2 and M3 dedup once per day. A(M) is 0. // bills as 15.
 3/12 codes: two G1 plus one G1D = G1 once 30 + D 30 = 60. Total 60.
 3/13 codes: one name on rows 12 (Ind) and 13 (Gp). T on row 12 30 + G1 on row 13 30 = 60.
   Each row keeps its own code and each counts once (entry 048). Total 60.
+  This day breaks the one session a day rule (entry 060) on purpose: it checks
+  row targeting, and the app must flag it (codedSiblingRow below).
 3/16 codes: G1/ listed first, then G1, one group. It counts its longest entry once = 30.
   First-listed would give 15 (entry 048). Total 30.
 The 6/8-6/12 note is a range and adds nothing to any of these days.
@@ -167,6 +169,13 @@ appData.comments = [
   {student: 'Evans Kai', row: 13, date: '3/13', text: 'seen in group'},
 ];
 const txt = generateTxt();
+const d313 = jsDate('3/13');
+const siblings = {
+  evansInd: (codedSiblingRow(byRow(12), d313) || {}).row || null,
+  evansGp: (codedSiblingRow(byRow(13), d313) || {}).row || null,
+  chen: codedSiblingRow(byRow(10), d313),
+  evansOtherDay: codedSiblingRow(byRow(12), jsDate('3/12')),
+};
 
 // A schema 2 record keyed by name. TC/ belongs on the Ind row, G1C on the Gp row.
 const legacy = migrateToRows({
@@ -191,7 +200,7 @@ const notes = {
   d: parseNoteMins('45 mins'),
 };
 const imported = parseNoteText('3/6\nTask (30 min)\n6/8-6/12 Consult week (60 min)\n3/10: Emails (15 min)\n');
-console.log(JSON.stringify({codes, txt, legacy, rc, dbl, ttc, am, notes, imported}));
+console.log(JSON.stringify({codes, txt, siblings, legacy, rc, dbl, ttc, am, notes, imported}));
 """
     payload = {
         "students": [{"name": name, "freq": freq, "row": smr_filler.STUDENT_ROW_START + i}
@@ -307,6 +316,7 @@ def main():
     for key, expected in EXPECTED_CODES.items():
         assert app["codes"][key] == expected, (key, app["codes"][key], expected)
     check_round_trip(app["txt"])
+    assert app["siblings"] == {"evansInd": EVANS_GP, "evansGp": EVANS_IND, "chen": None, "evansOtherDay": None}, app["siblings"]
     check_migration(app["legacy"])
     assert app["rc"][0]["modifier"] == "/" and app["rc"][1]["modifier"] is None
     assert app["dbl"][0]["invalid"] == "//"

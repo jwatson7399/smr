@@ -413,6 +413,7 @@ body {
 .row-acts .quick-suggest { border-color: var(--green); color: var(--green); }
 .row-acts .quick-absent { border-color: var(--red); color: var(--red); }
 .row-acts .quick-more { color: var(--text-dim); }
+.seen-on { border: 1px dashed var(--border); background: none; color: var(--text-dim); border-radius: 8px; font-size: 0.7rem; padding: 0.4rem 0.5rem; cursor: pointer; white-space: nowrap; }
 .code-pill { min-width: 44px; text-align: center; font-size: 0.85rem; }
 
 .student-row .name {
@@ -1587,6 +1588,15 @@ function studentByRow(row) {
   return appData.students.find(s => s.row === row);
 }
 
+// A student gets at most one session per day across the rows that carry the
+// student's name (roundtable entry 060). Returns the other row already coded
+// that day, or null.
+function codedSiblingRow(student, date) {
+  return appData.students.find(s =>
+    s.row !== student.row && s.name === student.name && appData.sessions[sessionKey(s, date)]
+  ) || null;
+}
+
 // Records before schema 3 keyed codes and comments by name, and their students
 // carry no row. The row is 6 plus the list position: no workbook has a blank
 // name inside the roster (entry 049). A name on two rows had one shared code.
@@ -1645,7 +1655,7 @@ function isWeekend(d) {
 // ══════════════════════════════════════════════
 let lastReportedSaveError = null;
 // Shown beside the save state. Keep it equal to CACHE_NAME in smr-sw.js.
-const APP_VERSION = 'smr-v25';
+const APP_VERSION = 'smr-v26';
 
 function setSaveState(ok, detail) {
   const el = document.getElementById('save-state');
@@ -2139,11 +2149,17 @@ function renderStudentList() {
     const row = document.createElement('div');
     row.className = 'student-row' + (code ? ' coded' : '');
     const suggest = suggestedCode(student);
+    const sibling = !code && codedSiblingRow(student, date);
     const actions = code
       ? `<button type="button" class="code-pill code-display ${getCodeColorClass(code)}" data-act="picker">${escHtml(code)}</button>`
+      : sibling
+      ? `<button type="button" class="seen-on" data-act="sibling">Seen on ${mandateTag(sibling) || 'other'} row ›</button>`
       : `<div class="row-acts">${suggest ? `<button type="button" class="quick-suggest" data-act="quick" data-code="${suggest}">${suggest}</button>` : ''}<button type="button" class="quick-absent" data-act="absent">A</button><button type="button" class="quick-more" data-act="picker">…</button></div>`;
     row.innerHTML = `<div class="who"><div class="n">${nameWithTag(student)}</div><div class="f">${escHtml(meta + commentBit)}</div></div>${actions}`;
-    row.querySelector('[data-act="picker"]').onclick = () => openCodePicker(student, date);
+    const pickerBtn = row.querySelector('[data-act="picker"]');
+    if (pickerBtn) pickerBtn.onclick = () => openCodePicker(student, date);
+    const siblingBtn = row.querySelector('[data-act="sibling"]');
+    if (siblingBtn) siblingBtn.onclick = () => openCodePicker(sibling, date);
     const quick = row.querySelector('[data-act="quick"]');
     if (quick) quick.onclick = () => setSessionCode(student, date, quick.dataset.code);
     const absent = row.querySelector('[data-act="absent"]');
@@ -2161,6 +2177,11 @@ let pickerDate = null;
 let builderCode = '';  // raw code string being built
 
 function openCodePicker(student, date) {
+  const sibling = !appData.sessions[sessionKey(student, date)] && codedSiblingRow(student, date);
+  if (sibling) {
+    alert(`${student.name} already has a session on ${dayName(date)} ${fmtDate(date)} on the ${mandateTag(sibling) || 'other'} row. One session a day: change it there.`);
+    return;
+  }
   pickerStudent = student;
   pickerDate = date;
 
@@ -3351,6 +3372,10 @@ function collectIssues() {
     appData.students.forEach(s => {
       const code = appData.sessions[sessionKey(s, d)];
       if (!code) return;
+      const twin = codedSiblingRow(s, d);
+      if (twin && twin.row > s.row) {
+        issues.push({level: 'red', title: s.name + ': coded on two rows on ' + label, detail: 'One session a day. Clear the ' + (mandateTag(s) || 'first') + ' row or the ' + (mandateTag(twin) || 'second') + ' row.', dateIndex, panel: 'sessions', studentRow: s.row, dateObj: d});
+      }
       const tokens = tokenizeCode(code);
       if (tokens.some(t => t.invalid === '//')) {
         issues.push({level: 'amber', title: studentLabel(s) + ': double slash in ' + code, detail: 'Use a single slash. It is billed as 15.', dateIndex, panel: 'sessions', studentRow: s.row, dateObj: d});

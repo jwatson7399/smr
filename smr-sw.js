@@ -1,5 +1,5 @@
 // Keep CACHE_NAME and APP_VERSION in smr-app.html the same.
-const CACHE_NAME = 'smr-v25';
+const CACHE_NAME = 'smr-v26';
 const APP = 'smr-app.html';
 const LOCAL_ASSETS = [APP, 'smr-manifest.json'];
 const CDN_ASSETS = ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'];
