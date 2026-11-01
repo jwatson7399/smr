@@ -1655,7 +1655,7 @@ function isWeekend(d) {
 // ══════════════════════════════════════════════
 let lastReportedSaveError = null;
 // Shown beside the save state. Keep it equal to CACHE_NAME in smr-sw.js.
-const APP_VERSION = 'smr-v26';
+const APP_VERSION = 'smr-v27';
 
 function setSaveState(ok, detail) {
   const el = document.getElementById('save-state');
@@ -2878,14 +2878,13 @@ function renderExport() {
   panel.innerHTML = overviewHtml + dailySectionHtml + studentSectionHtml + notSeenHtml + commentsHtml + exportHtml;
 
   // ── Wire events ──
-  const exportBlocked = collectIssues().some(i => i.level === 'red');
+  const redCount = countRedIssues();
   const txtBtn = document.getElementById('export-txt-btn');
-  txtBtn.disabled = exportBlocked;
-  txtBtn.textContent = exportBlocked ? 'Fix the red items to export' : 'Download .txt File';
-  document.getElementById('export-copy-btn').disabled = exportBlocked;
-  txtBtn.onclick = () => { if (!txtBtn.disabled) downloadTxt(txt); };
+  if (redCount) txtBtn.textContent = `Download .txt anyway (${redCount} red)`;
+  txtBtn.onclick = () => { if (confirmRedExport()) downloadTxt(txt); };
   document.getElementById('export-backup-btn').onclick = () => downloadBackup(buildBackupFromApp());
   document.getElementById('export-copy-btn').onclick = () => {
+    if (!confirmRedExport()) return;
     navigator.clipboard.writeText(txt).then(() => {
       const btn = document.getElementById('export-copy-btn');
       btn.textContent = 'Copied!';
@@ -3404,6 +3403,16 @@ function collectIssues() {
   return issues;
 }
 
+function countRedIssues() {
+  return collectIssues().filter(i => i.level === 'red').length;
+}
+
+// Red items warn before export but never block it.
+function confirmRedExport() {
+  const n = countRedIssues();
+  return !n || confirm(`${n} red item${n === 1 ? '' : 's'} on the Review tab still need attention. Export anyway?`);
+}
+
 function renderReview() {
   const panel = document.getElementById('panel-review');
   if (!panel) return;
@@ -3417,7 +3426,7 @@ function renderReview() {
     <div class="session-head">Before export</div>
     ${list}
     <div class="summary-section export-actions" style="padding:0.6rem">
-      <button class="export-btn primary" id="review-export-btn" ${red ? 'disabled' : ''}>${red ? 'Fix the red items to export' : 'Export for filler'}</button>
+      <button class="export-btn primary" id="review-export-btn">${red ? `Export anyway (${countRedIssues()} red)` : 'Export for filler'}</button>
       <button class="export-btn secondary" id="review-backup-btn">Save backup</button>
     </div>
     <div class="session-head">This period</div>
@@ -3439,7 +3448,7 @@ function renderReview() {
     };
   });
   const exportBtn = document.getElementById('review-export-btn');
-  exportBtn.onclick = () => { if (!exportBtn.disabled) downloadTxt(generateTxt()); };
+  exportBtn.onclick = () => { if (confirmRedExport()) downloadTxt(generateTxt()); };
   document.getElementById('review-backup-btn').onclick = () => downloadBackup(buildBackupFromApp());
   panel.querySelectorAll('[data-setting]').forEach(btn => {
     btn.onclick = () => {
