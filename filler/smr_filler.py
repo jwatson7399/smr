@@ -9,7 +9,7 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
-VERSION = "2026-10-05-b"  # a group counts its longest entry once per day
+VERSION = "2026-11-01-a"  # a two-row student is matched by position when the rows shift
 
 import re
 import sys
@@ -53,7 +53,13 @@ def _row_tag(line):
     return int(match.group(1)) if match else None
 
 
-def _parse_grid_sessions(body_lines):
+def _tag(row_tags, name, row):
+    """Record that the app put this name on this sheet row."""
+    if row_tags is not None and row is not None:
+        row_tags[_name_key(name)].add(row)
+
+
+def _parse_grid_sessions(body_lines, row_tags=None):
     """Parse grid-format sessions (tab-separated table from Apple Notes)."""
     sessions = []
     dates = []
@@ -82,6 +88,7 @@ def _parse_grid_sessions(body_lines):
         line_row, row = row, None
         if not student:
             continue
+        _tag(row_tags, student, line_row)
 
         for i, date in enumerate(dates):
             if not date:
@@ -94,11 +101,12 @@ def _parse_grid_sessions(body_lines):
     return sessions
 
 
-def parse_input(path):
+def parse_input(path, row_tags=None):
     """Parse the three-section input file. Returns (sessions, comments, notes).
 
     sessions: (date, student, code, row). comments: (student, text, row).
     row is the sheet row from a "# row N" line, or None.
+    row_tags, if given, collects {name key: {row, ...}} for every tagged line.
     """
     with open(path) as f:
         text = f.read()
@@ -119,7 +127,7 @@ def parse_input(path):
                           if l.strip() and not l.strip().startswith("#")
                           and not all(c in '—-–_' for c in l.strip())]
             if data_lines and "\t" in data_lines[0]:
-                sessions = _parse_grid_sessions(body_lines)
+                sessions = _parse_grid_sessions(body_lines, row_tags)
             else:
                 row = None
                 for line in body_lines:
@@ -132,6 +140,7 @@ def parse_input(path):
                     line_row, row = row, None
                     parts = [p.strip() for p in line.split(",", 2)]
                     if len(parts) == 3:
+                        _tag(row_tags, parts[1], line_row)
                         sessions.append((parts[0], parts[1], parts[2], line_row))
                     else:
                         print(f"  WARN: bad session line: {line!r}")
@@ -150,6 +159,7 @@ def parse_input(path):
                 line_row, row = row, None
                 parts = [p.strip() for p in line.split(",", 1)]
                 if len(parts) == 2:
+                    _tag(row_tags, parts[0], line_row)
                     comments.append((parts[0], parts[1], line_row))
                 else:
                     print(f"  WARN: bad comment line: {line!r}")
@@ -248,14 +258,35 @@ def resolve_student(key, student_map, ambiguous):
     return None
 
 
-def resolve_row(key, row, student_map, ambiguous, row_names):
-    """Use the row the app named when that row holds this name. Else match by name."""
+def resolve_row(key, row, student_map, ambiguous, row_names, row_tags=None):
+    """Use the row the app named when that row holds this name. Else match by name.
+
+    A student added above shifts every row below it, and a shifted row can land on
+    the same name's other row. So when the name is on as many workbook rows as the
+    app gave it, the app's first row is the workbook's first, before any name check.
+    """
     if row is not None:
+        tagged = sorted((row_tags or {}).get(_name_key(key), ()))
+        held = sorted(r for r, n in row_names.items() if _name_key(n) == _name_key(key))
+        if row in tagged and len(held) > 1 and len(tagged) == len(held):
+            moved = held[tagged.index(row)]
+            if moved != row:
+                print(f"  WARN: row {row} is now row {moved} for '{key}' (same position)")
+            return moved
         name = row_names.get(row)
         if name is not None and _name_key(name) == _name_key(key):
             return row
         print(f"  WARN: row {row} does not hold '{key}'; matching by name instead")
     return resolve_student(key, student_map, ambiguous)
+
+
+def report_roster_differences(row_tags, row_names):
+    """Name workbook students the app export never mentions."""
+    if not row_tags:
+        return
+    missing = [n for n in row_names.values() if _name_key(n) not in row_tags]
+    for name in dict.fromkeys(missing):
+        print(f"  WARN: '{name}' is in the workbook but not in the app's export")
 
 # ---------------------------------------------------------------------------
 # Date Map
@@ -506,7 +537,7 @@ def _clear_managed_region(ws, row_start, row_end, col_start, col_end):
                 cell.value = None
 
 
-def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map, row_names):
+def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map, row_names, row_tags=None):
     """Write treatment codes into the grid. Returns count of cells written."""
     # Authoritative write: clear the grid first so deletions in the PWA propagate.
     _clear_managed_region(
@@ -515,7 +546,7 @@ def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map, row_nam
 
     count = 0
     for date_str, student_key, code, tagged_row in sessions:
-        row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names)
+        row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names, row_tags)
         if row is None:
             print(f"  WARN: student not found: '{student_key}'")
             continue
@@ -528,7 +559,7 @@ def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map, row_nam
     return count
 
 
-def fill_comments(ws, comments, student_map, ambiguous, row_names):
+def fill_comments(ws, comments, student_map, ambiguous, row_names, row_tags=None):
     """Write comments into column W. Returns count of students with comments."""
     # Authoritative write: clear column W first so cleared comments in the PWA propagate.
     _clear_managed_region(
@@ -538,7 +569,7 @@ def fill_comments(ws, comments, student_map, ambiguous, row_names):
     # Collect all comments per student row so multiple comments concatenate
     row_comments = defaultdict(list)
     for student_key, text, tagged_row in comments:
-        row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names)
+        row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names, row_tags)
         if row is None:
             print(f"  WARN: student not found for comment: '{student_key}'")
             continue
@@ -681,7 +712,8 @@ def main():
         sys.exit(1)
 
     print(f"Loading input from {input_path}...")
-    sessions, comments, notes = parse_input(input_path)
+    row_tags = defaultdict(set)
+    sessions, comments, notes = parse_input(input_path, row_tags)
     print(f"  Parsed: {len(sessions)} sessions, {len(comments)} comments, {len(notes)} notes")
 
     print(f"Loading workbook (data_only) from {wb_path}...")
@@ -701,6 +733,7 @@ def main():
     student_map, ambiguous = build_student_map(ws_data)
     row_names = build_row_names(ws_data)
     print(f"  {len(student_map)} lookup keys, {len(ambiguous)} keys on more than one row")
+    report_roster_differences(row_tags, row_names)
 
     print("Building date map...")
     date_map = build_date_map(ws_data)
@@ -708,11 +741,11 @@ def main():
 
     # Fill data into the edit workbook
     print("Filling treatment codes...")
-    n_sessions = fill_treatment_codes(ws_edit, sessions, student_map, ambiguous, date_map, row_names)
+    n_sessions = fill_treatment_codes(ws_edit, sessions, student_map, ambiguous, date_map, row_names, row_tags)
     print(f"  Wrote {n_sessions} cells")
 
     print("Filling comments...")
-    n_comments = fill_comments(ws_edit, comments, student_map, ambiguous, row_names)
+    n_comments = fill_comments(ws_edit, comments, student_map, ambiguous, row_names, row_tags)
     print(f"  Wrote {n_comments} comments")
 
     print("Filling notes...")
