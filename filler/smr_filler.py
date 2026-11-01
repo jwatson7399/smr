@@ -9,7 +9,7 @@ Produces <workbook_filled.xlsm> with treatment codes, comments, notes, and
 daily totals written into the "STANDARD Stats" sheet.
 """
 
-VERSION = "2026-11-01-a"  # a two-row student is matched by position when the rows shift
+VERSION = "2026-11-01-b"  # problems to check are listed in the Done box
 
 import re
 import sys
@@ -36,6 +36,16 @@ GROUP_CODES = {"G1", "G2", "G3", "M2", "M3"}
 # Full session is 30 for every student (roundtable entry 021). Column C is not read.
 # Slash length is fixed. // is not valid (entry 006): it bills as half, with a warning.
 FULL_SESSION_MINUTES = 30
+
+# Things the therapist should look at, in plain words. Printed last as
+# "CHECK: " lines; the Mac app shows them in its Done box.
+CHECKS = []
+SHIFTED = []  # two-row students filled by position; listed as one check
+
+
+def check(message):
+    if message not in CHECKS:
+        CHECKS.append(message)
 HALF_SESSION_MINUTES = 15
 
 # ---------------------------------------------------------------------------
@@ -144,6 +154,7 @@ def parse_input(path, row_tags=None):
                         sessions.append((parts[0], parts[1], parts[2], line_row))
                     else:
                         print(f"  WARN: bad session line: {line!r}")
+                        check(f"Could not read this session line: {line}")
 
         elif header.startswith("comment"):
             row = None
@@ -163,6 +174,7 @@ def parse_input(path, row_tags=None):
                     comments.append((parts[0], parts[1], line_row))
                 else:
                     print(f"  WARN: bad comment line: {line!r}")
+                    check(f"Could not read this comment line: {line}")
 
         elif header.startswith("note"):
             for line in body_lines:
@@ -174,6 +186,7 @@ def parse_input(path, row_tags=None):
                     notes.append((parts[0], parts[1]))
                 else:
                     print(f"  WARN: bad note line: {line!r}")
+                    check(f"Could not read this note line: {line}")
 
     return sessions, comments, notes
 
@@ -272,6 +285,8 @@ def resolve_row(key, row, student_map, ambiguous, row_names, row_tags=None):
             moved = held[tagged.index(row)]
             if moved != row:
                 print(f"  WARN: row {row} is now row {moved} for '{key}' (same position)")
+                if row_names[moved] not in SHIFTED:
+                    SHIFTED.append(row_names[moved])
             return moved
         name = row_names.get(row)
         if name is not None and _name_key(name) == _name_key(key):
@@ -287,6 +302,7 @@ def report_roster_differences(row_tags, row_names):
     missing = [n for n in row_names.values() if _name_key(n) not in row_tags]
     for name in dict.fromkeys(missing):
         print(f"  WARN: '{name}' is in the workbook but not in the app's export")
+        check(f"{name} is in the workbook but not in the phone app. Nothing was filled for them.")
 
 # ---------------------------------------------------------------------------
 # Date Map
@@ -431,6 +447,7 @@ def parse_code_cell(cell_value):
 
         # Truly unknown — pass through but warn
         print(f"  WARN: unknown code token '{token}' in cell '{text}'")
+        check(f"'{token}' is not a known code (in '{text}'). It was counted as 30 minutes.")
         results.append((token.upper(), 1.0))
         i += 1
 
@@ -545,17 +562,22 @@ def fill_treatment_codes(ws, sessions, student_map, ambiguous, date_map, row_nam
     )
 
     count = 0
+    unplaced = defaultdict(list)  # student -> ["10/19 T", ...]
     for date_str, student_key, code, tagged_row in sessions:
         row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names, row_tags)
         if row is None:
             print(f"  WARN: student not found: '{student_key}'")
+            unplaced[student_key].append(f"{date_str} {code}")
             continue
         col = resolve_date(date_str, date_map)
         if col is None:
             print(f"  WARN: date not found: '{date_str}'")
+            check(f"{date_str} is not a date in this workbook. {student_key}'s {code} was not filled.")
             continue
         ws.cell(row=row, column=col, value=code)
         count += 1
+    for student_key, items in unplaced.items():
+        check(f"{student_key} was not found in the workbook. Not filled: {', '.join(items)}.")
     return count
 
 
@@ -572,6 +594,7 @@ def fill_comments(ws, comments, student_map, ambiguous, row_names, row_tags=None
         row = resolve_row(student_key, tagged_row, student_map, ambiguous, row_names, row_tags)
         if row is None:
             print(f"  WARN: student not found for comment: '{student_key}'")
+            check(f"{student_key} was not found in the workbook. Their comment was not filled.")
             continue
         row_comments[row].append(text)
 
@@ -664,6 +687,8 @@ def calculate_daily_totals(ws_edit, ws_data, date_map, notes_text):
                         f"  WARN: // in row {row} column {col} is not a valid code; "
                         f"billed as {HALF_SESSION_MINUTES} min"
                     )
+                    check(f"'{cell_val}' on row {row} uses //, which is not valid. "
+                          f"It was counted as {HALF_SESSION_MINUTES} minutes.")
                 else:
                     minutes = FULL_SESSION_MINUTES * modifier
                 if u in GROUP_CODES:
@@ -746,6 +771,9 @@ def main():
 
     print("Filling comments...")
     n_comments = fill_comments(ws_edit, comments, student_map, ambiguous, row_names, row_tags)
+    if SHIFTED:
+        check("Rows did not line up with the workbook, so these students' two rows were "
+              f"filled in order. Check both rows: {'; '.join(SHIFTED)}.")
     print(f"  Wrote {n_comments} comments")
 
     print("Filling notes...")
@@ -775,6 +803,8 @@ def main():
     wb_data.close()
     wb_edit.close()
     print("Done!")
+    for message in CHECKS:
+        print(f"CHECK: {message}")
 
 
 if __name__ == "__main__":

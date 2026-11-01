@@ -71,6 +71,26 @@ on run
 
 	set outPath to do shell script "dir=$(dirname " & quoted form of wbPath & "); base=$(basename " & quoted form of wbPath & "); name=\"${base%.*}\"; ext=\"${base##*.}\"; echo \"$dir/${name}_filled.$ext\""
 
+	-- The filler prints "CHECK: " lines last: things to look at before submitting.
+	set checkLines to {}
+	repeat with p in paragraphs of fillerOutput
+		set lineText to p as text
+		if lineText starts with "CHECK: " and (length of lineText) > 7 then set end of checkLines to text 8 thru -1 of lineText
+	end repeat
+
 	do shell script "open -R " & quoted form of outPath
-	display dialog "Done!" & return & return & "Filled workbook saved as:" & return & outPath buttons {"OK"} default button "OK" with title "SMR Filler " & appVersion
+	set doneMsg to "Done!" & return & return & "Filled workbook saved as:" & return & outPath
+	if (count of checkLines) is 0 then
+		display dialog doneMsg buttons {"OK"} default button "OK" with title "SMR Filler " & appVersion
+	else
+		set doneMsg to doneMsg & return & return & "Please check before submitting:"
+		repeat with i from 1 to count of checkLines
+			if i > 8 then
+				set doneMsg to doneMsg & return & "...and " & ((count of checkLines) - 8) & " more."
+				exit repeat
+			end if
+			set doneMsg to doneMsg & return & return & "- " & item i of checkLines
+		end repeat
+		display dialog doneMsg buttons {"OK"} default button "OK" with icon caution with title "SMR Filler " & appVersion
+	end if
 end run
