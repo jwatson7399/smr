@@ -1874,6 +1874,38 @@ function periodSettings() {
   };
 }
 function dailyMinimumMinutes() { return periodSettings().dailyMinimumMinutes; }
+
+// School calendar 2026-27, from Kristine (Nov 5, 2026). H codes these days.
+// closed and half (staff and student half day): no time needed.
+// student-half (student-only half day): the daily minimum still applies.
+const SCHOOL_DAYS = {
+  closed: ['2026-11-03', '2026-11-05', '2026-11-06', '2026-11-11', '2026-11-26', '2026-11-27',
+    '2026-12-24', '2026-12-25', '2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31',
+    '2027-01-01', '2027-01-18', '2027-02-12', '2027-02-15',
+    '2027-03-22', '2027-03-23', '2027-03-24', '2027-03-25', '2027-03-26', '2027-05-31', '2027-06-01'],
+  half: ['2026-11-25', '2026-12-23', '2027-06-22', '2027-06-23'],
+  'student-half': ['2026-11-18', '2026-12-09', '2027-01-13', '2027-02-10', '2027-03-10',
+    '2027-04-14', '2027-05-12', '2027-06-09'],
+};
+const SCHOOL_DAY_TYPE = {};
+Object.entries(SCHOOL_DAYS).forEach(([type, keys]) => keys.forEach(k => { SCHOOL_DAY_TYPE[k] = type; }));
+const SCHOOL_DAY_LABEL = {closed: 'School closed', half: 'Staff and student half day', 'student-half': 'Student half day'};
+
+function schoolDayType(date) { return SCHOOL_DAY_TYPE[fmtDateKey(date)] || ''; }
+
+// The calendar decides first. A date not on it needs no time when every coded
+// student is H, or every one is O (isClosedDay).
+function noTimeNeeded(date) {
+  const type = schoolDayType(date);
+  if (type === 'closed' || type === 'half') return true;
+  if (type === 'student-half') return false;
+  return isClosedDay(date);
+}
+
+// Use this, not dailyMinimumMinutes(), wherever one day is checked.
+function minimumForDay(date) {
+  return noTimeNeeded(date) ? 0 : dailyMinimumMinutes();
+}
 function dailyCeilingMinutes() { return periodSettings().dailyCeilingMinutes; }
 
 function fmtClock(mins) {
@@ -1945,10 +1977,15 @@ function renderFinish() {
   const date = appData.dates[appData.selectedDate];
   if (!slot || !date) return;
   const parts = dayParts(date);
-  const min = dailyMinimumMinutes();
+  const min = minimumForDay(date);
   const ceil = dailyCeilingMinutes();
+  const dayLabel = SCHOOL_DAY_LABEL[schoolDayType(date)] || 'School closed';
   if (parts.total > ceil) {
     slot.innerHTML = `<div class="finish over"><div class="gap"><em>${fmtClock(parts.total)}</em> logged, over ${fmtClock(ceil)}</div><div class="sub">Usually a code counted twice or a note with the wrong minutes. Check the Review tab.</div></div>`;
+    return;
+  }
+  if (!min) {
+    slot.innerHTML = `<div class="finish done"><div class="gap">${escHtml(dayLabel)}. No time needed.</div><div class="sub">${fmtClock(parts.total)} logged.</div></div>`;
     return;
   }
   if (parts.total >= min) {
@@ -1992,14 +2029,15 @@ function renderDayTotal() {
   const date = appData.dates[appData.selectedDate];
   if (!card || !date) return;
   const parts = dayParts(date);
-  const min = dailyMinimumMinutes();
+  const min = minimumForDay(date);
   const ceil = dailyCeilingMinutes();
   card.className = 'daybar' + (parts.total > ceil ? ' over' : parts.total >= min ? ' ok' : '');
-  document.getElementById('day-total-big').innerHTML = fmtClock(parts.total) + ' <span>of ' + fmtClock(min) + '</span>';
+  document.getElementById('day-total-big').innerHTML = fmtClock(parts.total) + ' <span>' + (min ? 'of ' + fmtClock(min) : 'no minimum') + '</span>';
   document.getElementById('day-total-left').textContent = parts.total > ceil
     ? 'Over ' + fmtClock(ceil)
+    : !min ? 'No time needed'
     : parts.total >= min ? 'Day covered' : fmtClock(min - parts.total) + ' to go';
-  document.getElementById('day-total-bar').style.width = Math.min(100, parts.total / min * 100) + '%';
+  document.getElementById('day-total-bar').style.width = (min ? Math.min(100, parts.total / min * 100) : 100) + '%';
   document.getElementById('day-total-codes').textContent = fmtClock(parts.codes);
   document.getElementById('day-total-notes').textContent = fmtClock(parts.notes);
   renderFinish();
@@ -2035,7 +2073,7 @@ function renderDateSelector() {
   appData.dates.forEach((d, i) => {
     const chip = document.createElement('button');
     const parts = dayParts(d);
-    const mark = parts.total >= dailyMinimumMinutes() ? ' covered' : (parts.total > 0 ? ' short' : '');
+    const mark = parts.total >= minimumForDay(d) ? ' covered' : (parts.total > 0 ? ' short' : '');
     chip.className = 'date-chip' + (i === appData.selectedDate ? ' active' : '') + (isWeekend(d) ? ' weekend' : '') + mark;
     chip.innerHTML = `<span class="day-label">${dayName(d)}</span>${fmtDate(d)}`;
     chip.onclick = () => {
@@ -2922,7 +2960,7 @@ function totalMark(date, total) {
   const when = dayStart(date);
   if (when > today) return '';
   if (total > dailyCeilingMinutes()) return 'over';
-  if (total >= dailyMinimumMinutes()) return 'ok';
+  if (total >= minimumForDay(date)) return 'ok';
   if (total > 0) return 'short';
   return '';
 }
@@ -2937,8 +2975,9 @@ function renderDayNoteSheet() {
   document.getElementById('day-notes-codes').textContent = fmtClock(parts.codes);
   document.getElementById('day-notes-notes').textContent = fmtClock(parts.notes);
   const totalEl = document.getElementById('day-notes-total');
-  totalEl.textContent = fmtClock(parts.total) + ' of ' + fmtClock(dailyMinimumMinutes());
-  totalEl.style.color = parts.total >= dailyMinimumMinutes() ? 'var(--green)' : 'var(--red)';
+  const dayMin = minimumForDay(chartNoteDate);
+  totalEl.textContent = fmtClock(parts.total) + (dayMin ? ' of ' + fmtClock(dayMin) : ', no minimum');
+  totalEl.style.color = parts.total >= dayMin ? 'var(--green)' : 'var(--red)';
   document.getElementById('day-notes-pills').innerHTML = orderedActivities().map(({a, i}) =>
     `<button type="button" data-day-pill="${i}">${escHtml(a.text)}<b>${a.defaultMinutes}m</b></button>`
   ).join('');
@@ -3335,7 +3374,6 @@ function commentOnDay(student, date) {
 
 function collectIssues() {
   const issues = [];
-  const min = dailyMinimumMinutes();
   const ceil = dailyCeilingMinutes();
   const today = dayStart(new Date());
   const periodKeys = new Set(appData.dates.map(fmtDateKey));
@@ -3354,8 +3392,9 @@ function collectIssues() {
     if (isWeekend(d)) return;
     const parts = dayParts(d);
     const label = dayName(d) + ' ' + fmtDate(d);
-    if (dayStart(d) <= today && !isClosedDay(d) && parts.total < min) {
-      issues.push({level: 'red', title: label + ' is ' + fmtClock(min - parts.total) + ' under ' + fmtClock(min), detail: 'Add activities on the Notes tab', dateIndex, panel: 'notes'});
+    const dayMin = minimumForDay(d);
+    if (dayStart(d) <= today && parts.total < dayMin) {
+      issues.push({level: 'red', title: label + ' is ' + fmtClock(dayMin - parts.total) + ' under ' + fmtClock(dayMin), detail: 'Add activities on the Notes tab', dateIndex, panel: 'notes'});
     }
     if (parts.total > ceil) {
       issues.push({level: 'red', title: label + ' is over ' + fmtClock(ceil), detail: 'Check for a code counted twice or a note with the wrong minutes', dateIndex, panel: 'sessions'});
@@ -3497,7 +3536,7 @@ function armReminder() {
   if (fire <= now) return;
   const date = appData.dates[appData.selectedDate];
   if (!date || dayStart(date) !== dayStart(now)) return;
-  if (dayParts(date).total >= dailyMinimumMinutes()) return;
+  if (dayParts(date).total >= minimumForDay(date)) return;
   if (Notification.permission === 'denied') return;
   if (Notification.permission === 'default') {
     Notification.requestPermission().then(() => {}).catch(() => {});
