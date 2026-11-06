@@ -30,6 +30,7 @@ No server is involved. When updating app code, bump the `CACHE_NAME` in `smr-sw.
 - **xlsm import**: `parseXlsm()` returns `{students, dates, sessions, comments, notes}`. Many cells contain formulas referencing other sheets — SheetJS reads cached formula values.
 - **Notes format in xlsm**: All in cell A131 (overflow to A132-A133), `\r\n`-separated lines. Format is `date: Activity1 (time) Activity2 (time)` per line, with a preamble line to skip and date ranges like `2/23-2/24: School closed`.
 - **Notes are drag-and-drop reorderable** within the same day (touch + desktop) for chronological ordering.
+- **School calendar**: `SCHOOL_DAYS` lists the year's closures, staff and student half days (no time needed) and student-only half days (daily minimum still applies). Per-day checks use `minimumForDay(date)`, never `dailyMinimumMinutes()`. Update the list each school year.
 - **Treatment code system**: Direct (T, G1, G2, I, M, Y), Status (A, A2, O, H — 0 minutes), Indirect (C, S, R, D). Modifiers: `/` = half (15m), `//` = less than half (10m). Base session = 30 minutes.
 - **Chart tab**: Shows full student×date grid with totals rows for Codes, Notes, and combined Total per date.
 
